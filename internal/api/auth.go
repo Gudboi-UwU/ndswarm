@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Gudboi-UwU/ndswarm/internal/auth"
+	"github.com/Gudboi-UwU/ndswarm/internal/store"
 )
 
 const sessionCookie = "ndswarm_session"
@@ -208,6 +209,7 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request) {
 
 type settings struct {
 	GuestMode auth.GuestMode `json:"guestMode"`
+	store.ServerSettings
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
@@ -216,18 +218,47 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, settings{GuestMode: mode})
+	ss, err := s.Store.ServerSettings(r.Context())
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, settings{GuestMode: mode, ServerSettings: ss})
 }
 
+// patchSettings changes only the fields present in the body.
 func (s *Server) patchSettings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		GuestMode *auth.GuestMode `json:"guestMode"`
+		GuestMode       *auth.GuestMode `json:"guestMode"`
+		RetentionDays   *int            `json:"retentionDays"`
+		TargetAllowlist *[]string       `json:"targetAllowlist"`
+		AllowLinkLocal  *bool           `json:"allowLinkLocal"`
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
 	if in.GuestMode != nil {
 		if err := s.Auth.SetGuestMode(r.Context(), *in.GuestMode); err != nil {
+			fail(w, r, err)
+			return
+		}
+	}
+	if in.RetentionDays != nil || in.TargetAllowlist != nil || in.AllowLinkLocal != nil {
+		ss, err := s.Store.ServerSettings(r.Context())
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+		if in.RetentionDays != nil {
+			ss.RetentionDays = *in.RetentionDays
+		}
+		if in.TargetAllowlist != nil {
+			ss.TargetAllowlist = *in.TargetAllowlist
+		}
+		if in.AllowLinkLocal != nil {
+			ss.AllowLinkLocal = *in.AllowLinkLocal
+		}
+		if err := s.Store.SaveServerSettings(r.Context(), ss); err != nil {
 			fail(w, r, err)
 			return
 		}

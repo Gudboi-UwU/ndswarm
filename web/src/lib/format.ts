@@ -20,3 +20,18 @@ export function formatBytes(n: number): string {
   if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1)} MB`
   return `${(n / 1024 ** 3).toFixed(2)} GB`
 }
+
+export function pretty(body: string): string {
+  try {
+    return JSON.stringify(JSON.parse(body), null, 2)
+  } catch {
+    return body
+  }
+}
+
+export function headerText(h: Record<string, string[]>): string {
+  return Object.entries(h)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, vs]) => vs.map((v) => `${k}: ${v}`).join('\n'))
+    .join('\n')
+}

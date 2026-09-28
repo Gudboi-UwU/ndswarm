@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { formatElapsed } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 export interface ChartSeries {
   label: string
@@ -23,6 +24,8 @@ interface Props {
   digits?: number
   /** Fix the x axis to 0..xMax (a live run's planned length) instead of fitting the data. */
   xMax?: number
+  /** Called with the x value (second) of a clicked point. */
+  onPick?: (x: number) => void
 }
 
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -31,10 +34,14 @@ const cssVar = (name: string) => getComputedStyle(document.documentElement).getP
  * One-axis time series (uPlot). Hovering shows a crosshair and the values in the legend,
  * which also names every series, so identity never rests on color alone.
  */
-export function TimeChart({ title, data, series, unit = '', height = 200, digits = 1, xMax }: Props) {
+export function TimeChart({ title, data, series, unit = '', height = 200, digits = 1, xMax, onPick }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const plot = useRef<uPlot | null>(null)
   const latest = useRef(data)
+  const pick = useRef(onPick)
+  useEffect(() => {
+    pick.current = onPick
+  })
   const { resolvedTheme } = useTheme()
   const dark = resolvedTheme !== 'light'
 
@@ -75,6 +82,10 @@ export function TimeChart({ title, data, series, unit = '', height = 200, digits
     const u = new uPlot(opts, latest.current as uPlot.AlignedData, el)
     u.over.addEventListener('mouseleave', () => u.setLegend({ idx: latest.current[0].length - 1 }))
     u.setLegend({ idx: latest.current[0].length - 1 })
+    u.over.addEventListener('click', () => {
+      const idx = u.cursor.idx
+      if (idx != null && pick.current) pick.current(latest.current[0][idx])
+    })
     plot.current = u
     const ro = new ResizeObserver(() => plot.current?.setSize({ width: el.clientWidth, height }))
     ro.observe(el)
@@ -98,7 +109,7 @@ export function TimeChart({ title, data, series, unit = '', height = 200, digits
   return (
     <figure className="min-w-0">
       <figcaption className="mb-2 text-sm font-medium">{title}</figcaption>
-      <div ref={host} className="ndswarm-chart w-full" role="img" aria-label={`${title} over time`} />
+      <div ref={host} className={cn('ndswarm-chart w-full', onPick && '[&_.u-over]:cursor-pointer')} role="img" aria-label={`${title} over time`} />
     </figure>
   )
 }

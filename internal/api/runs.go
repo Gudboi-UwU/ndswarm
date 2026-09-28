@@ -63,12 +63,13 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
-	testID, _ := strconv.ParseInt(r.URL.Query().Get("testId"), 10, 64)
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
-	respond(w, r, http.StatusOK)(s.Runner.List(r.Context(), testID, limit))
+	q := r.URL.Query()
+	f := runner.RunFilter{Status: q.Get("status")}
+	f.TestID, _ = strconv.ParseInt(q.Get("testId"), 10, 64)
+	f.ProjectID, _ = strconv.ParseInt(q.Get("projectId"), 10, 64)
+	f.Before, _ = strconv.ParseInt(q.Get("before"), 10, 64)
+	f.Limit, _ = strconv.Atoi(q.Get("limit"))
+	respond(w, r, http.StatusOK)(s.Runner.List(r.Context(), f))
 }
 
 func (s *Server) activeRun(w http.ResponseWriter, _ *http.Request) {

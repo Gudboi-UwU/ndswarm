@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strings"
 
 	"github.com/Gudboi-UwU/ndswarm/internal/engine"
 	"github.com/Gudboi-UwU/ndswarm/internal/model"
@@ -72,20 +73,30 @@ func (r *Runner) attachLive(run *Run) {
 	a.mu.Unlock()
 	if last != nil {
 		run.Live = last
-		run.Summary = &Summary{ElapsedSec: last.ElapsedSec, Total: last.Total, Keys: last.Keys, Codes: last.Codes}
+		run.Summary = &Summary{ElapsedSec: last.ElapsedSec, DroppedLogs: last.DroppedLogs, Total: last.Total, Keys: last.Keys, Codes: last.Codes}
 	}
 }
 
-// List returns recent runs, newest first, optionally for one test.
-func (r *Runner) List(ctx context.Context, testID int64, limit int) ([]Run, error) {
-	q, args := "SELECT "+runColumns+" FROM runs", []any{}
-	if testID > 0 {
-		q += " WHERE test_id = ?"
-		args = append(args, testID)
+// List returns runs newest first.
+func (r *Runner) List(ctx context.Context, f RunFilter) ([]Run, error) {
+	where, args := []string{"1 = 1"}, []any{}
+	if f.TestID > 0 {
+		where, args = append(where, "test_id = ?"), append(args, f.TestID)
 	}
-	q += " ORDER BY started_at DESC LIMIT ?"
-	args = append(args, limit)
-	rows, err := r.db.R.QueryContext(ctx, q, args...)
+	if f.ProjectID > 0 {
+		where, args = append(where, "project_id = ?"), append(args, f.ProjectID)
+	}
+	if f.Status != "" {
+		where, args = append(where, "status = ?"), append(args, f.Status)
+	}
+	if f.Before > 0 {
+		where, args = append(where, "id < ?"), append(args, f.Before)
+	}
+	limit := f.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.db.R.QueryContext(ctx, "SELECT "+runColumns+" FROM runs WHERE "+strings.Join(where, " AND ")+" ORDER BY id DESC LIMIT ?", append(args, limit)...)
 	if err != nil {
 		return nil, err
 	}

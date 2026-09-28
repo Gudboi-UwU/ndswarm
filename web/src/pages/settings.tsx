@@ -29,6 +29,8 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 const roles: { value: Role; label: string; help: string }[] = [
@@ -52,6 +54,7 @@ export function SettingsPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
       <UsersSection currentUserId={me.user?.id} />
       <GuestSection />
+      <TargetsSection />
       <AboutSection />
     </div>
   )
@@ -386,6 +389,81 @@ function GuestSection() {
         </RadioGroup>
       )}
     </Section>
+  )
+}
+
+function TargetsSection() {
+  const queryClient = useQueryClient()
+  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('GET', '/settings') })
+  return (
+    <Section title="Targets and retention" description="Limits that apply to every test and run on this server.">
+      {settings.isPending ? (
+        <Skeleton className="h-48 w-full" />
+      ) : settings.isError ? (
+        <p className="text-sm text-destructive">{errorMessage(settings.error)}</p>
+      ) : (
+        <TargetsForm key={JSON.stringify(settings.data)} initial={settings.data} onSaved={(s) => queryClient.setQueryData(['settings'], s)} />
+      )}
+    </Section>
+  )
+}
+
+function TargetsForm({ initial, onSaved }: { initial: Settings; onSaved: (s: Settings) => void }) {
+  const [allowlist, setAllowlist] = useState(initial.targetAllowlist.join('\n'))
+  const [linkLocal, setLinkLocal] = useState(initial.allowLinkLocal)
+  const [retention, setRetention] = useState(String(initial.retentionDays))
+  const save = useMutation({
+    mutationFn: () =>
+      api<Settings>('PATCH', '/settings', {
+        targetAllowlist: allowlist.split(/[\s,]+/).filter(Boolean),
+        allowLinkLocal: linkLocal,
+        retentionDays: Number(retention),
+      }),
+    onSuccess: (s) => {
+      onSaved(s)
+      toast.success('Settings saved')
+    },
+  })
+  const err = save.error instanceof ApiError ? save.error : null
+  const hostErr = err?.details.find((d) => d.path.startsWith('targetAllowlist'))?.message
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    save.mutate()
+  }
+  return (
+    <form onSubmit={submit} className="grid max-w-2xl gap-6" noValidate>
+      {save.error && !err?.details.length && <p className="text-sm text-destructive">{errorMessage(save.error)}</p>}
+      <div className="grid gap-2">
+        <Label htmlFor="allowlist">Allowed target hosts</Label>
+        <Textarea id="allowlist" rows={4} className="font-mono text-[13px]" placeholder={'api.example.com\n*.staging.example.com'} value={allowlist} aria-invalid={hostErr ? true : undefined} onChange={(e) => setAllowlist(e.target.value)} />
+        <p className={hostErr ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
+          {hostErr ?? 'One host per line. Leave empty to allow any host. Applies to runs, preflight and Try.'}
+        </p>
+      </div>
+      <label className="flex items-start gap-3">
+        <Switch className="mt-0.5" checked={linkLocal} onCheckedChange={setLinkLocal} />
+        <span className="grid gap-0.5">
+          <span className="text-sm font-medium">Allow link-local addresses</span>
+          <span className="text-sm text-muted-foreground">Off by default, so tests cannot reach cloud metadata such as 169.254.169.254.</span>
+        </span>
+      </label>
+      <FormField
+        id="retention"
+        label="Keep logged requests for (days)"
+        type="number"
+        min={1}
+        className="w-32 font-mono"
+        value={retention}
+        onChange={(e) => setRetention(e.target.value)}
+        error={err?.field('retentionDays')}
+        hint="Older request logs are deleted daily. Run metrics and summaries are kept until the run is deleted."
+      />
+      <div>
+        <Button type="submit" disabled={save.isPending}>
+          Save
+        </Button>
+      </div>
+    </form>
   )
 }
 

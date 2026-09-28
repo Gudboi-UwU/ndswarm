@@ -238,8 +238,10 @@ func (s *Service) GetTest(ctx context.Context, id int64) (model.Test, error) {
 	}
 	t.Flows, t.Load = cfg.Flows, cfg.Load
 	t.Settings = model.DefaultSettings
-	if cfg.Settings != nil {
-		t.Settings = *cfg.Settings
+	if len(cfg.Settings) > 0 {
+		if err := json.Unmarshal(cfg.Settings, &t.Settings); err != nil {
+			return t, fmt.Errorf("test %d settings: %w", id, err)
+		}
 	}
 	t.Normalize()
 	return t, nil
@@ -249,7 +251,7 @@ func (s *Service) GetTest(ctx context.Context, id int64) (model.Test, error) {
 type testConfig struct {
 	Flows    []model.Flow    `json:"flows"`
 	Load     model.Load      `json:"load"`
-	Settings *model.Settings `json:"settings"` // nil in tests saved before settings existed
+	Settings json.RawMessage `json:"settings"` // decoded over DefaultSettings so newer fields get defaults
 }
 
 func (s *Service) CreateTest(ctx context.Context, t model.Test) (model.Test, error) {
@@ -282,7 +284,8 @@ func (s *Service) saveTest(ctx context.Context, t model.Test) (model.Test, error
 			return t, model.ValidationError{{Path: "environmentId", Message: "Choose an environment of this project."}}
 		}
 	}
-	blob, err := json.Marshal(testConfig{Flows: t.Flows, Load: t.Load, Settings: &t.Settings})
+	settings, _ := json.Marshal(t.Settings)
+	blob, err := json.Marshal(testConfig{Flows: t.Flows, Load: t.Load, Settings: settings})
 	if err != nil {
 		return t, err
 	}

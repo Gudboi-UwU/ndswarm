@@ -135,6 +135,9 @@ function Builder({ saved }: { saved: Test }) {
             <Link to={`/projects/${saved.projectId}`} className="hover:text-foreground">
               {project.data?.name ?? '...'}
             </Link>
+            <Link to={`/runs?testId=${saved.id}`} className="ml-4 hover:text-foreground">
+              Past runs
+            </Link>
           </nav>
           <div className="flex flex-wrap items-center gap-3">
             <Input

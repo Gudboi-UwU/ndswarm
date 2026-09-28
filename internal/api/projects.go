@@ -11,6 +11,7 @@ import (
 	"github.com/Gudboi-UwU/ndswarm/internal/auth"
 	"github.com/Gudboi-UwU/ndswarm/internal/engine"
 	"github.com/Gudboi-UwU/ndswarm/internal/model"
+	"github.com/Gudboi-UwU/ndswarm/internal/runner"
 	"github.com/Gudboi-UwU/ndswarm/internal/tmpl"
 )
 
@@ -266,7 +267,12 @@ func (s *Server) try(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	transport := engine.NewTransport(engine.ClientOptions{HTTP2: true})
+	guard, err := runner.Guard(r.Context(), s.Store)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	transport := engine.NewTransport(engine.ClientOptions{HTTP2: true, Guard: guard})
 	defer transport.CloseIdleConnections()
 	res := engine.Send(r.Context(), engine.Client(transport, in.Step.FollowRedirects), req, time.Duration(in.Step.TimeoutMs)*time.Millisecond)
 

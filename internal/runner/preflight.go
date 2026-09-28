@@ -7,6 +7,7 @@ import (
 
 	"github.com/Gudboi-UwU/ndswarm/internal/engine"
 	"github.com/Gudboi-UwU/ndswarm/internal/model"
+	"github.com/Gudboi-UwU/ndswarm/internal/store"
 )
 
 // Preflight is what the UI shows before a start. Errors block; warnings need "Start anyway".
@@ -54,6 +55,11 @@ func (r *Runner) preflight(ctx context.Context, testID int64) (Preflight, *engin
 		pf.Errors = append(pf.Errors, err.Error())
 		return pf, nil, t, env, nil
 	}
+	guard, err := Guard(ctx, r.db)
+	if err != nil {
+		return pf, nil, t, env, err
+	}
+	plan.Guard = guard
 	if pf.Errors = append(pf.Errors, plan.RenderCheck(renderRounds)...); len(pf.Errors) > 0 {
 		return pf, plan, t, env, nil
 	}
@@ -64,4 +70,10 @@ func (r *Runner) preflight(ctx context.Context, testID int64) (Preflight, *engin
 		}
 	}
 	return pf, plan, t, env, nil
+}
+
+// Guard reads the admin's target limits for requests.
+func Guard(ctx context.Context, db *store.Store) (engine.Guard, error) {
+	ss, err := db.ServerSettings(ctx)
+	return engine.Guard{AllowLinkLocal: ss.AllowLinkLocal, Allow: ss.TargetAllowlist}, err
 }

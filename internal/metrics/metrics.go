@@ -163,10 +163,22 @@ type Recorder struct {
 	recent  []*window // last recentSec one-second windows across keys, ring
 	next    int
 	sec     *window // scratch for the current second across keys
+
+	interval    *window // current 10-second bucket across keys
+	intervalIdx int
+}
+
+// IntervalSec is the bucket size for exact per-interval percentiles.
+const IntervalSec = 10
+
+// Interval is a closed 10-second bucket, histogram encoded for storage.
+type Interval struct {
+	Index int // bucket number: seconds [Index*10, Index*10+10)
+	HDR   []byte
 }
 
 func NewRecorder(keys int) *Recorder {
-	r := &Recorder{overall: newWindow(), sec: newWindow()}
+	r := &Recorder{overall: newWindow(), sec: newWindow(), interval: newWindow()}
 	for range keys {
 		r.keys = append(r.keys, &key{cur: newWindow(), spare: newWindow(), total: newWindow()})
 	}
@@ -199,6 +211,7 @@ type Snapshot struct {
 	Recent       Stats            `json:"recent5s"`
 	Keys         []KeyStats       `json:"keys"`
 	Codes        map[string]int64 `json:"codes"` // cumulative status codes and error categories
+	Interval     *Interval        `json:"-"`     // set when a 10-second bucket closed at this tick
 }
 
 // Tick closes the current second. elapsed is seconds since the run started (for total RPS).
@@ -218,6 +231,12 @@ func (r *Recorder) Tick(elapsed float64) Snapshot {
 		}
 		w.reset() // w is now the spare
 	}
+	// The second just closed belongs to bucket (elapsed-1)/10; a new bucket index closes the old one.
+	if idx := int(max(elapsed-0.5, 0)) / IntervalSec; idx != r.intervalIdx {
+		snap.Interval = r.closeInterval()
+		r.intervalIdx = idx
+	}
+	r.interval.merge(r.sec)
 	r.overall.merge(r.sec)
 	ring := r.recent[r.next]
 	ring.reset()
@@ -237,6 +256,43 @@ func (r *Recorder) Tick(elapsed float64) Snapshot {
 		snap.Codes[k] = v
 	}
 	return snap
+}
+
+func (r *Recorder) closeInterval() *Interval {
+	defer r.interval.reset()
+	if r.interval.count == 0 {
+		return nil
+	}
+	b, err := encode(r.interval.hist)
+	if err != nil {
+		return nil
+	}
+	return &Interval{Index: r.intervalIdx, HDR: b}
+}
+
+// FinalInterval returns the partly filled last bucket after the last Tick.
+func (r *Recorder) FinalInterval() *Interval { return r.closeInterval() }
+
+// DecodeHistogram reads a stored histogram and returns its percentile summary in ms.
+func DecodeHistogram(b []byte) (avg, p50, p90, p95, p99, maxMs float64, err error) {
+	h, err := hdr.Decode(b)
+	if err != nil {
+		return
+	}
+	return h.Mean() / 1000, ms(h.ValueAtQuantile(50)), ms(h.ValueAtQuantile(90)), ms(h.ValueAtQuantile(95)), ms(h.ValueAtQuantile(99)), ms(h.Max()), nil
+}
+
+// MergeEncoded merges stored histograms (e.g. six 10 s buckets into a minute) and re-encodes.
+func MergeEncoded(blobs [][]byte) ([]byte, error) {
+	out := hdr.New(lowestUs, highestUs, sigDigits)
+	for _, b := range blobs {
+		h, err := hdr.Decode(b)
+		if err != nil {
+			return nil, err
+		}
+		out.Merge(h)
+	}
+	return encode(out)
 }
 
 // KeyCodes returns cumulative status codes and error categories for key k (after the last Tick).

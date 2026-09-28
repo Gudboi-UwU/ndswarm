@@ -85,6 +85,9 @@ func serve(cfg config.Config) error {
 	if err := runs.Recover(context.Background()); err != nil {
 		return fmt.Errorf("recover runs: %w", err)
 	}
+	if err := db.InitServerSettings(context.Background(), cfg.RetentionDays, cfg.Allowlist); err != nil {
+		return fmt.Errorf("settings: %w", err)
+	}
 
 	server := &api.Server{Auth: authSvc, Projects: projects, Runner: runs, Hub: hub, Store: db, UI: web.Dist(), Version: version}
 	srv := &http.Server{
@@ -97,6 +100,7 @@ func serve(cfg config.Config) error {
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
+	go retention(ctx, db)
 	slog.Info("ndswarm listening", "addr", cfg.Addr, "dataDir", cfg.DataDir, "version", version)
 
 	select {
@@ -114,6 +118,24 @@ func serve(cfg config.Config) error {
 		return err
 	}
 	return nil
+}
+
+// retention deletes request logs older than the retention setting, at start and daily.
+func retention(ctx context.Context, db *store.Store) {
+	for {
+		if ss, err := db.ServerSettings(ctx); err == nil {
+			if n, err := db.PurgeLogs(ctx, ss.RetentionDays); err != nil {
+				slog.Error("log retention", "err", err)
+			} else if n > 0 {
+				slog.Info("deleted old request logs", "rows", n, "olderThanDays", ss.RetentionDays)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(24 * time.Hour):
+		}
+	}
 }
 
 // healthcheck probes /healthz on the local listener; used by the container HEALTHCHECK.

@@ -58,6 +58,7 @@ func (s *Server) Handler() http.Handler {
 		r.With(require(auth.PermView)).Get("/system", s.system)
 		s.projectRoutes(r)
 		s.runRoutes(r)
+		s.insightRoutes(r)
 
 		r.Group(func(r chi.Router) {
 			r.Use(require(auth.PermAdmin))
@@ -159,7 +160,7 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusConflict, "conflict", msg, model.ValidationError{{Path: "username", Message: msg}})
 	case errors.Is(err, auth.ErrNotFound), errors.Is(err, project.ErrNotFound), errors.Is(err, runner.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", msg, nil)
-	case errors.Is(err, auth.ErrSetupDone), errors.Is(err, auth.ErrLastAdmin), errors.Is(err, auth.ErrSelfDelete), errors.Is(err, runner.ErrNotActive):
+	case errors.Is(err, auth.ErrSetupDone), errors.Is(err, auth.ErrLastAdmin), errors.Is(err, auth.ErrSelfDelete), errors.Is(err, runner.ErrNotActive), errors.Is(err, runner.ErrStillRunning):
 		writeError(w, http.StatusConflict, "conflict", msg, nil)
 	default:
 		slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)

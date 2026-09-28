@@ -138,7 +138,7 @@ export function LoadEditor({ load, onChange }: { load: Load; onChange: (l: Load)
 
 export function SettingsEditor({ settings, onChange }: { settings: HttpSettings; onChange: (s: HttpSettings) => void }) {
   const { errors } = useBuilder()
-  const toggle = (key: 'keepAlive' | 'http2' | 'insecureTLS', label: string, help: string) => (
+  const toggle = (key: 'keepAlive' | 'http2' | 'insecureTLS' | 'captureBodies', label: string, help: string) => (
     <label className="flex items-start gap-3">
       <Switch className="mt-0.5" checked={settings[key]} onCheckedChange={(v) => onChange({ ...settings, [key]: v })} />
       <span className="grid gap-0.5">
@@ -152,6 +152,24 @@ export function SettingsEditor({ settings, onChange }: { settings: HttpSettings;
       {toggle('keepAlive', 'Keep connections alive', 'Reuse connections between requests, like a browser. Turn off to measure a new connection every time.')}
       {toggle('http2', 'Allow HTTP/2', 'Use HTTP/2 when the server offers it over TLS.')}
       {toggle('insecureTLS', 'Skip TLS certificate checks', 'For self-signed test servers only. Never for production targets.')}
+      {toggle('captureBodies', 'Keep bodies in logs', 'Store request and response bodies of logged requests (cut at 16 KB and 64 KB).')}
+      <div className="grid gap-2">
+        <Label htmlFor="sample">Log successful requests (%)</Label>
+        <Input
+          id="sample"
+          type="number"
+          min={0}
+          max={100}
+          step={0.1}
+          className="w-32 font-mono"
+          value={settings.logSamplePct}
+          aria-invalid={errors.get('settings.logSamplePct') ? true : undefined}
+          onChange={(e) => onChange({ ...settings, logSamplePct: Number(e.target.value) })}
+        />
+        <p className="text-sm text-muted-foreground">
+          {errors.get('settings.logSamplePct') ?? 'Errors are always logged. Per endpoint and second at most 50 errors, 20 successes and the slowest request are kept.'}
+        </p>
+      </div>
       <div className="grid gap-2">
         <Label htmlFor="ua">User-Agent</Label>
         <Input id="ua" placeholder="ndswarm/<version>" value={settings.userAgent} aria-invalid={errors.get('settings.userAgent') ? true : undefined} onChange={(e) => onChange({ ...settings, userAgent: e.target.value })} />

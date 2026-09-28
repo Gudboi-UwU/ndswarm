@@ -2,9 +2,11 @@ import { useMutation } from '@tanstack/react-query'
 import { PlayIcon } from 'lucide-react'
 import { useState } from 'react'
 import { api, ApiError, errorMessage } from '@/api/client'
-import type { Step, Timing, TryResult } from '@/api/types'
+import type { Step, TryResult } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Code, Waterfall } from '@/components/http-view'
+import { formatBytes, headerText, pretty } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 /** Sends the step once with the chosen variant and shows what went out and came back. */
@@ -70,59 +72,4 @@ export function TryPanel({ step, environmentId, variant, onValidationError }: { 
       )}
     </section>
   )
-}
-
-function Waterfall({ t }: { t: Timing }) {
-  const phases: [string, number][] = [
-    ['DNS', t.dns],
-    ['Connect', t.connect],
-    ['TLS', t.tls],
-    ['Waiting', t.ttfb],
-    ['Download', t.download],
-  ]
-  const total = Math.max(t.total, 0.001)
-  return (
-    <dl className="grid grid-cols-[5rem_1fr_5rem] items-center gap-x-3 gap-y-1 text-xs">
-      {phases.map(([name, ms]) => (
-        <div key={name} className="contents">
-          <dt className="text-muted-foreground">{name}</dt>
-          <div className="h-1.5">
-            <div className="h-full rounded-full bg-primary/70" style={{ width: `${Math.max((ms / total) * 100, ms > 0 ? 1 : 0)}%` }} />
-          </div>
-          <dd className="text-right font-mono tabular-nums">{ms.toFixed(1)} ms</dd>
-        </div>
-      ))}
-      {t.reused && <p className="col-span-3 text-muted-foreground">Connection reused, so DNS, connect and TLS were skipped.</p>}
-    </dl>
-  )
-}
-
-function Code({ text, note }: { text: string; note?: string }) {
-  return (
-    <div>
-      <pre className="max-h-96 overflow-auto rounded-md bg-muted p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all">{text || '(empty)'}</pre>
-      {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
-    </div>
-  )
-}
-
-function pretty(body: string): string {
-  try {
-    return JSON.stringify(JSON.parse(body), null, 2)
-  } catch {
-    return body
-  }
-}
-
-function headerText(h: Record<string, string[]>): string {
-  return Object.entries(h)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, vs]) => vs.map((v) => `${k}: ${v}`).join('\n'))
-    .join('\n')
-}
-
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / 1024 / 1024).toFixed(1)} MB`
 }

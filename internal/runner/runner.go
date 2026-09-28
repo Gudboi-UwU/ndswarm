@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Gudboi-UwU/ndswarm/internal/engine"
+	"github.com/Gudboi-UwU/ndswarm/internal/logsink"
 	"github.com/Gudboi-UwU/ndswarm/internal/metrics"
 	"github.com/Gudboi-UwU/ndswarm/internal/model"
 	"github.com/Gudboi-UwU/ndswarm/internal/project"
@@ -52,6 +53,8 @@ type active struct {
 	id     int64 // 0 while in preflight
 	cancel context.CancelCauseFunc
 	done   chan struct{}
+
+	logs *logsink.Sink
 
 	mu   sync.Mutex
 	last *TickMsg
@@ -119,6 +122,7 @@ func (r *Runner) Start(ctx context.Context, testID int64, user string, force boo
 	runCtx, cancel := context.WithCancelCause(context.Background())
 	r.mu.Lock()
 	a.id, a.cancel = id, cancel
+	a.logs = logsink.New(r.db, id, len(plan.Keys), plan.Settings.LogSamplePct)
 	r.mu.Unlock()
 	r.event(id, "start", map[string]any{"by": user, "forced": force && len(pf.Warnings) > 0})
 	go r.run(runCtx, a, plan)
@@ -172,9 +176,11 @@ func (r *Runner) run(ctx context.Context, a *active, plan *engine.Plan) {
 				slog.Error("run panicked", "run", id, "panic", p)
 			}
 		}()
-		engine.Run(ctx, plan, rec, func(t engine.Tick) {
+		engine.Run(ctx, plan, rec, a.logs, func(t engine.Tick) {
 			last = t
+			a.logs.Tick()
 			msg := r.tickMsg(id, t)
+			msg.DroppedLogs = a.logs.Dropped()
 			a.mu.Lock()
 			a.last = &msg
 			a.mu.Unlock()
@@ -187,7 +193,8 @@ func (r *Runner) run(ctx context.Context, a *active, plan *engine.Plan) {
 	if status == "finished" && ctx.Err() != nil {
 		status, reason = "aborted", context.Cause(ctx).Error()
 	}
-	if err := r.finish(id, status, reason, rec, plan, last); err != nil {
+	a.logs.Close()
+	if err := r.finish(id, status, reason, rec, plan, last, a.logs.Dropped()); err != nil {
 		slog.Error("finish run", "run", id, "err", err)
 	}
 	r.mu.Lock()
@@ -261,6 +268,12 @@ func (r *Runner) writeSecond(id int64, t engine.Tick) error {
 	if err := write(-1, t.Snap.Second, t.Snap.SecondPhases); err != nil {
 		return err
 	}
+	if iv := t.Snap.Interval; iv != nil {
+		if _, err := tx.Exec("INSERT OR REPLACE INTO metrics_hdr (run_id, key_id, bucket, hdr) VALUES (?, -1, ?, ?)",
+			id, fmt.Sprintf("10s:%d", iv.Index), iv.HDR); err != nil {
+			return err
+		}
+	}
 	for _, k := range t.Snap.Keys {
 		if k.Second.Count > 0 {
 			if err := write(k.Key, k.Second, k.Phases); err != nil {
@@ -273,14 +286,15 @@ func (r *Runner) writeSecond(id int64, t engine.Tick) error {
 
 // Summary is the final (or latest live) state of a run.
 type Summary struct {
-	ElapsedSec float64            `json:"elapsedSec"`
-	Total      metrics.Stats      `json:"total"`
-	Keys       []metrics.KeyStats `json:"keys"`
-	Codes      map[string]int64   `json:"codes"`
+	ElapsedSec  float64            `json:"elapsedSec"`
+	DroppedLogs int64              `json:"droppedLogs"`
+	Total       metrics.Stats      `json:"total"`
+	Keys        []metrics.KeyStats `json:"keys"`
+	Codes       map[string]int64   `json:"codes"`
 }
 
-func (r *Runner) finish(id int64, status, reason string, rec *metrics.Recorder, plan *engine.Plan, last engine.Tick) error {
-	summary, err := json.Marshal(Summary{ElapsedSec: last.Elapsed, Total: last.Snap.Total, Keys: last.Snap.Keys, Codes: last.Snap.Codes})
+func (r *Runner) finish(id int64, status, reason string, rec *metrics.Recorder, plan *engine.Plan, last engine.Tick, dropped int64) error {
+	summary, err := json.Marshal(Summary{ElapsedSec: last.Elapsed, DroppedLogs: dropped, Total: last.Snap.Total, Keys: last.Snap.Keys, Codes: last.Snap.Codes})
 	if err != nil {
 		return err
 	}
@@ -296,6 +310,9 @@ func (r *Runner) finish(id int64, status, reason string, rec *metrics.Recorder, 
 	if _, err := tx.Exec("UPDATE runs SET status = ?, verdict = ?, end_reason = ?, ended_at = ?, summary_json = ? WHERE id = ?",
 		status, verdict, reason, r.now().UnixMilli(), string(summary), id); err != nil {
 		return err
+	}
+	if iv := rec.FinalInterval(); iv != nil {
+		tx.Exec("INSERT OR REPLACE INTO metrics_hdr (run_id, key_id, bucket, hdr) VALUES (?, -1, ?, ?)", id, fmt.Sprintf("10s:%d", iv.Index), iv.HDR)
 	}
 	if b, err := rec.Histogram(); err == nil {
 		tx.Exec("INSERT INTO metrics_hdr (run_id, key_id, bucket, hdr) VALUES (?, -1, 'total', ?)", id, b)

@@ -57,7 +57,7 @@ func (p *Plan) RenderCheck(rounds int) []string {
 
 // SendCheck sends one request per enabled step (first variant), up to 8 at a time.
 func (p *Plan) SendCheck(ctx context.Context) []Check {
-	transport := NewTransport(ClientOptions{HTTP2: p.Settings.HTTP2, InsecureTLS: p.Settings.InsecureTLS})
+	transport := NewTransport(ClientOptions{HTTP2: p.Settings.HTTP2, InsecureTLS: p.Settings.InsecureTLS, Guard: p.Guard})
 	defer transport.CloseIdleConnections()
 
 	type job struct {

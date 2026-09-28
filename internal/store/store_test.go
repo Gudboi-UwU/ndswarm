@@ -48,3 +48,29 @@ func TestOpenMigrateSettings(t *testing.T) {
 		t.Errorf("after reopen: %q", v)
 	}
 }
+
+func TestServerSettings(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.InitServerSettings(ctx, 7, "API.example.com, *.test")
+	s.InitServerSettings(ctx, 99, "") // env only seeds once
+	got, _ := s.ServerSettings(ctx)
+	if got.RetentionDays != 7 || len(got.TargetAllowlist) != 2 || got.TargetAllowlist[0] != "api.example.com" || got.AllowLinkLocal {
+		t.Errorf("seeded %+v", got)
+	}
+	for _, bad := range []string{"a*", "http://x", "x:80", "*.", "*.*.x"} {
+		if s.SaveServerSettings(ctx, ServerSettings{RetentionDays: 7, TargetAllowlist: []string{bad}}) == nil {
+			t.Errorf("accepted host %q", bad)
+		}
+	}
+	if err := s.SaveServerSettings(ctx, ServerSettings{RetentionDays: 3, TargetAllowlist: []string{}, AllowLinkLocal: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.ServerSettings(ctx); got.RetentionDays != 3 || len(got.TargetAllowlist) != 0 || !got.AllowLinkLocal {
+		t.Errorf("saved %+v", got)
+	}
+}

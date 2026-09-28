@@ -22,10 +22,35 @@ const MaxReadBody = 10 << 20
 // ErrBlockedTarget is returned when a request would reach a link-local address (cloud metadata).
 var ErrBlockedTarget = errors.New("target address is blocked: link-local addresses such as 169.254.169.254 are not allowed")
 
+// ErrNotAllowed is returned when a target allowlist is set and the host is not on it.
+var ErrNotAllowed = errors.New("target host is not on the allowlist (Settings > Targets)")
+
+// Guard limits where requests may go. The zero value is the safe default:
+// link-local (cloud metadata) blocked, any host allowed.
+type Guard struct {
+	AllowLinkLocal bool
+	Allow          []string // hosts; "*.example.com" matches subdomains; empty = any host
+}
+
+func (g Guard) allows(host string) bool {
+	if len(g.Allow) == 0 {
+		return true
+	}
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	for _, a := range g.Allow {
+		a = strings.ToLower(a)
+		if host == a || (strings.HasPrefix(a, "*.") && strings.HasSuffix(host, a[1:])) {
+			return true
+		}
+	}
+	return false
+}
+
 type ClientOptions struct {
 	MaxConnsPerHost int
 	HTTP2           bool
 	InsecureTLS     bool
+	Guard           Guard
 }
 
 // NewTransport returns the transport shared by every VU of a run.
@@ -36,16 +61,23 @@ func NewTransport(o ClientOptions) *http.Transport {
 		KeepAlive: 30 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {
 			host, _, _ := net.SplitHostPort(address)
-			if ip := net.ParseIP(host); ip != nil && (ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
+			if ip := net.ParseIP(host); !o.Guard.AllowLinkLocal && ip != nil && (ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
 				return ErrBlockedTarget
 			}
 			return nil
 		},
 	}
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, _, _ := net.SplitHostPort(addr) // the hostname, before DNS resolution
+		if !o.Guard.allows(host) {
+			return nil, ErrNotAllowed
+		}
+		return dialer.DialContext(ctx, network, addr)
+	}
 	conns := max(o.MaxConnsPerHost, 10)
 	return &http.Transport{
 		Proxy:               nil,
-		DialContext:         dialer.DialContext,
+		DialContext:         dial,
 		ForceAttemptHTTP2:   o.HTTP2,
 		MaxIdleConns:        conns * 4,
 		MaxIdleConnsPerHost: conns,
@@ -159,7 +191,7 @@ func Categorize(err error) string {
 	switch {
 	case errors.As(err, &tErr):
 		return "template"
-	case errors.Is(err, ErrBlockedTarget):
+	case errors.Is(err, ErrBlockedTarget), errors.Is(err, ErrNotAllowed):
 		return "connection"
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, os.ErrDeadlineExceeded):
 		return "timeout"

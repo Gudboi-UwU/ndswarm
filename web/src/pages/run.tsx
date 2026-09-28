@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleHelpIcon, SquareIcon } from 'lucide-react'
+import { CircleHelpIcon, SquareIcon, Trash2Icon } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { useMe } from '@/api/auth'
 import { api, ApiError, errorMessage } from '@/api/client'
@@ -9,15 +9,20 @@ import { keys } from '@/api/keys'
 import type { Point, Run, RunKey, Stats, Tick } from '@/api/types'
 import { useRunStream } from '@/api/ws'
 import { ConfirmDelete } from '@/components/page'
+import { RunStatus } from '@/components/run-table'
 import { TimeChart, type ChartSeries } from '@/components/time-chart'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatBytes, formatDate, formatElapsed, formatNumber } from '@/lib/format'
+import { categoryLabel, emptyFilters, keyLabel, type LogFilters } from '@/lib/run'
 import { cn } from '@/lib/utils'
 import { NotFoundPage } from './not-found'
+import { ErrorsTab } from './run-errors'
+import { LogsTab } from './run-logs'
+import { ExportMenu, SummaryTab } from './run-summary'
 
 // Latency percentiles are ordinal: one hue, darker = higher percentile (light) / brighter (dark).
 // Validated with the dataviz palette checks against both surfaces.
@@ -61,6 +66,24 @@ function RunView({ run }: { run: Run }) {
   const [tick, setTick] = useState<Tick | undefined>(run.live)
   const [status, setStatus] = useState(run.status)
   const [stopping, setStopping] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('tab') ?? 'overview'
+  const setTab = (t: string) => setParams(t === 'overview' ? {} : { tab: t }, { replace: true })
+  const [filters, setFilters] = useState<LogFilters>(emptyFilters)
+  const showLogs = (f: Partial<LogFilters>) => {
+    setFilters({ ...emptyFilters, ...f })
+    setTab('logs')
+  }
+  const navigate = useNavigate()
+  const remove = useMutation({
+    mutationFn: () => api<void>('DELETE', `/runs/${run.id}`),
+    onSuccess: async () => {
+      toast.success(`Deleted run #${run.id}`)
+      await navigate(run.testId ? `/tests/${run.testId}` : '/runs')
+    },
+    onError: (e) => toast.error(errorMessage(e)),
+  })
   const series = useQuery({ queryKey: keys.timeseries(run.id), queryFn: () => api<Point[]>('GET', `/runs/${run.id}/timeseries`) })
 
   useRunStream(run.id, live, {
@@ -126,17 +149,25 @@ function RunView({ run }: { run: Run }) {
         </nav>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{run.testName}</h1>
-          <StatusBadge status={status} verdict={run.verdict} />
+          <RunStatus run={{ status, verdict: run.verdict }} />
           <span className="font-mono text-sm text-muted-foreground tabular-nums">
             {formatElapsed(elapsed)}
             {live && ` / ${formatElapsed(planned)}`}
           </span>
-          {live && me?.can.run && (
-            <Button variant="outline" className="ml-auto" disabled={status === 'stopping' || stop.isPending} onClick={() => setStopping(true)}>
-              <SquareIcon />
-              {status === 'stopping' ? 'Stopping' : 'Stop'}
-            </Button>
-          )}
+          <div className="ml-auto flex gap-2">
+            {live && me?.can.run && (
+              <Button variant="outline" disabled={status === 'stopping' || stop.isPending} onClick={() => setStopping(true)}>
+                <SquareIcon />
+                {status === 'stopping' ? 'Stopping' : 'Stop'}
+              </Button>
+            )}
+            {!live && <ExportMenu runId={run.id} />}
+            {!live && me?.can.edit && (
+              <Button variant="outline" size="sm" aria-label="Delete run" onClick={() => setDeleting(true)}>
+                <Trash2Icon />
+              </Button>
+            )}
+          </div>
         </div>
         <p className="text-sm text-muted-foreground">
           Started {formatDate(run.startedAt)} by {run.createdBy}
@@ -145,6 +176,23 @@ function RunView({ run }: { run: Run }) {
         </p>
       </header>
 
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="errors">Errors{total && total.err > 0 ? ` (${formatNumber(total.err)})` : ''}</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="summary">Summary</TabsTrigger>
+        </TabsList>
+        <TabsContent value="errors" className="mt-6">
+          <ErrorsTab runId={run.id} keys={run.keys} live={live} onShowLogs={(category, key) => showLogs({ category, key: String(key) })} />
+        </TabsContent>
+        <TabsContent value="logs" className="mt-6">
+          <LogsTab runId={run.id} keys={run.keys} filters={filters} onFilters={setFilters} dropped={tick?.droppedLogs ?? run.summary?.droppedLogs ?? 0} />
+        </TabsContent>
+        <TabsContent value="summary" className="mt-6">
+          <SummaryTab runId={run.id} keys={run.keys} live={live} />
+        </TabsContent>
+        <TabsContent value="overview" className="mt-6 grid gap-8">
       <section aria-label="Totals" className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
         <StatCard label="Avg latency" help="Mean time from sending a request until its response body was fully read." value={total ? `${formatNumber(total.avg, 1)} ms` : '-'} sub={recent && `${formatNumber(recent.avg, 1)} ms last 5s`} />
         <StatCard label="OK" help="Requests with no transport error and a status from 200 to 399." value={total ? formatNumber(total.ok) : '-'} sub={total && total.count > 0 ? `${formatNumber((total.ok / total.count) * 100, 1)}% of requests` : undefined} />
@@ -162,10 +210,10 @@ function RunView({ run }: { run: Run }) {
       </section>
 
       <section aria-label="Charts" className="grid gap-8 lg:grid-cols-2">
-        <TimeChart title="Requests per second" data={chart.rps} series={RPS} digits={0} xMax={xMax} />
-        <TimeChart title="Latency" data={chart.lat} series={LATENCY} unit=" ms" xMax={xMax} />
-        <TimeChart title="Errors per second" data={chart.err} series={ERRORS} digits={0} xMax={xMax} />
-        <TimeChart title="Virtual users" data={chart.vus} series={VUS} digits={0} xMax={xMax} height={160} />
+        <TimeChart title="Requests per second" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.rps} series={RPS} digits={0} xMax={xMax} />
+        <TimeChart title="Latency" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.lat} series={LATENCY} unit=" ms" xMax={xMax} />
+        <TimeChart title="Errors per second" onPick={(x) => showLogs({ from: String(x), to: String(x), category: 'error' })} data={chart.err} series={ERRORS} digits={0} xMax={xMax} />
+        <TimeChart title="Virtual users" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.vus} series={VUS} digits={0} xMax={xMax} height={160} />
       </section>
 
       <section aria-label="Endpoints" className="grid gap-3">
@@ -183,6 +231,18 @@ function RunView({ run }: { run: Run }) {
         )}
       </section>
 
+        </TabsContent>
+      </Tabs>
+
+      <ConfirmDelete
+        target={deleting ? run : null}
+        title={`Delete run #${run.id}?`}
+        description="Its metrics and logged requests are removed. This cannot be undone."
+        confirm="Delete run"
+        pending={remove.isPending}
+        onConfirm={() => remove.mutate()}
+        onCancel={() => setDeleting(false)}
+      />
       <ConfirmDelete
         target={stopping ? run : null}
         title="Stop this run?"
@@ -194,14 +254,6 @@ function RunView({ run }: { run: Run }) {
       />
     </div>
   )
-}
-
-function StatusBadge({ status, verdict }: { status: string; verdict: string | null }) {
-  if (status === 'finished') {
-    return <Badge variant={verdict === 'fail' ? 'destructive' : 'default'}>{verdict === 'fail' ? 'Failed thresholds' : 'Passed'}</Badge>
-  }
-  const label: Record<string, string> = { running: 'Running', stopping: 'Stopping', aborted: 'Stopped', failed: 'Failed' }
-  return <Badge variant={status === 'failed' ? 'destructive' : status === 'running' ? 'default' : 'secondary'}>{label[status] ?? status}</Badge>
 }
 
 function StatCard({ label, help, value, sub, alert }: { label: string; help: string; value: string; sub?: string; alert?: boolean }) {
@@ -222,13 +274,6 @@ function StatCard({ label, help, value, sub, alert }: { label: string; help: str
       <p className="mt-0.5 min-h-4 text-xs text-muted-foreground tabular-nums">{sub}</p>
     </div>
   )
-}
-
-function keyLabel(k: RunKey): string {
-  let s = k.flow
-  if (k.step !== k.flow) s += ` / ${k.step}`
-  if (k.variant) s += ` [${k.variant}]`
-  return s
 }
 
 function EndpointTable({ keys: runKeys, stats }: { keys: RunKey[]; stats: { keyId: number; total: Stats }[] }) {
@@ -269,16 +314,6 @@ function EndpointTable({ keys: runKeys, stats }: { keys: RunKey[]; stats: { keyI
       </Table>
     </div>
   )
-}
-
-const categoryLabel: Record<string, string> = {
-  http_4xx: 'HTTP 4xx',
-  http_5xx: 'HTTP 5xx',
-  timeout: 'Timeout',
-  connection: 'Connection failed',
-  dns: 'DNS lookup failed',
-  tls: 'TLS failed',
-  template: 'Template error',
 }
 
 function Codes({ codes }: { codes: Record<string, number> }) {

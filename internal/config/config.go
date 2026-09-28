@@ -17,6 +17,8 @@ type Config struct {
 	SecretKey     string // base64, 32 bytes; empty = auto-generate in DataDir
 	GuestMode     string // initial value only; admins change it in Settings
 	MaxVUs        int
+	RetentionDays int    // initial value; admins change it in Settings
+	Allowlist     string // initial target allowlist, comma separated
 	LogLevel      slog.Level
 }
 
@@ -34,6 +36,10 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("NDSWARM_MAX_VUS must be a positive number")
 	}
 	c.MaxVUs = maxVUs
+	if c.RetentionDays, err = strconv.Atoi(get("NDSWARM_RETENTION_DAYS", "30")); err != nil || c.RetentionDays < 1 {
+		return c, fmt.Errorf("NDSWARM_RETENTION_DAYS must be a positive number of days")
+	}
+	c.Allowlist = get("NDSWARM_TARGET_ALLOWLIST", "")
 	if err := c.LogLevel.UnmarshalText([]byte(get("NDSWARM_LOG_LEVEL", "info"))); err != nil {
 		return c, fmt.Errorf("NDSWARM_LOG_LEVEL: %w", err)
 	}

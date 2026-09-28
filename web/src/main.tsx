@@ -14,6 +14,7 @@ import { NotFoundPage } from '@/pages/not-found'
 import { ProjectPage } from '@/pages/project'
 import { ProjectsPage } from '@/pages/projects'
 import { RunPage } from '@/pages/run'
+import { RunsPage } from '@/pages/runs'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { SettingsPage } from '@/pages/settings'
 import { SetupPage } from '@/pages/setup'
@@ -53,6 +54,7 @@ const router = createBrowserRouter([
               </Suspense>
             ),
           },
+          { path: 'runs', element: <RunsPage /> },
           { path: 'runs/:id', element: <RunPage /> },
           { path: 'settings', element: <SettingsPage /> },
           { path: '*', element: <NotFoundPage /> },

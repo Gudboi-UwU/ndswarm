@@ -57,3 +57,29 @@ func TestRecorder(t *testing.T) {
 		t.Errorf("encode: %v", err)
 	}
 }
+
+func TestIntervals(t *testing.T) {
+	r := NewRecorder(1)
+	var closed []*Interval
+	for sec := 1; sec <= 25; sec++ {
+		r.Record(0, Sample{LatencyUs: int64(sec) * 1000, Status: 200})
+		if iv := r.Tick(float64(sec)).Interval; iv != nil {
+			closed = append(closed, iv)
+		}
+	}
+	if final := r.FinalInterval(); final != nil {
+		closed = append(closed, final)
+	}
+	if len(closed) != 3 || closed[0].Index != 0 || closed[2].Index != 2 {
+		t.Fatalf("intervals %d", len(closed))
+	}
+	// Bucket 0 holds seconds 1-10 (latencies 1..10 ms), bucket 1 seconds 11-20.
+	_, p50, _, _, _, maxMs, err := DecodeHistogram(closed[1].HDR)
+	if err != nil || math.Abs(maxMs-20) > 0.1 || p50 < 15 || p50 > 16.1 {
+		t.Errorf("bucket 1: p50 %v max %v err %v", p50, maxMs, err)
+	}
+	merged, _ := MergeEncoded([][]byte{closed[0].HDR, closed[1].HDR})
+	if _, _, _, _, _, m, _ := DecodeHistogram(merged); math.Abs(m-20) > 0.1 {
+		t.Errorf("merged max %v", m)
+	}
+}

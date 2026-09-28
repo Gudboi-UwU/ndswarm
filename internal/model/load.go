@@ -37,10 +37,13 @@ type Settings struct {
 	HTTP2       bool   `json:"http2"`
 	InsecureTLS bool   `json:"insecureTLS"`
 	UserAgent   string `json:"userAgent"` // empty = ndswarm/<version>
+
+	LogSamplePct  float64 `json:"logSamplePct"`  // share of successful requests logged (errors always are, within caps)
+	CaptureBodies bool    `json:"captureBodies"` // keep request and response bodies in logs
 }
 
 // DefaultSettings is used for tests saved before settings existed.
-var DefaultSettings = Settings{KeepAlive: true, HTTP2: true}
+var DefaultSettings = Settings{KeepAlive: true, HTTP2: true, LogSamplePct: 1, CaptureBodies: true}
 
 func (l *Load) normalize() {
 	if l.Model == "" {
@@ -104,5 +107,6 @@ func (l Load) validate(v *ValidationError) {
 }
 
 func (s Settings) validate(v *ValidationError) {
+	v.Check(s.LogSamplePct >= 0 && s.LogSamplePct <= 100, "settings.logSamplePct", "Use 0-100.")
 	v.Check(len(s.UserAgent) <= maxUserAgentBytes && !strings.ContainsAny(s.UserAgent, "\r\n"), "settings.userAgent", "Use one line of at most 500 characters.")
 }

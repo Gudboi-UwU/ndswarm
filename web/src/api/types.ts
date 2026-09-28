@@ -19,6 +19,9 @@ export interface Me {
 
 export interface Settings {
   guestMode: GuestMode
+  retentionDays: number
+  targetAllowlist: string[]
+  allowLinkLocal: boolean
 }
 
 export interface SystemInfo {
@@ -187,6 +190,8 @@ export interface HttpSettings {
   http2: boolean
   insecureTLS: boolean
   userAgent: string
+  logSamplePct: number
+  captureBodies: boolean
 }
 
 export interface Stats {
@@ -234,6 +239,7 @@ export interface Tick {
   second: Stats
   keys: KeyStats[]
   codes: Record<string, number>
+  droppedLogs: number
 }
 
 export interface Run {
@@ -250,7 +256,7 @@ export interface Run {
   createdBy: string
   load: Load
   keys: RunKey[]
-  summary: { elapsedSec: number; total: Stats; keys: KeyStats[]; codes: Record<string, number> } | null
+  summary: { elapsedSec: number; droppedLogs: number; total: Stats; keys: KeyStats[]; codes: Record<string, number> } | null
   live?: Tick
 }
 
@@ -281,4 +287,79 @@ export interface Preflight {
   errors: string[]
   warnings: string[]
   checks: PreflightCheck[]
+}
+
+// ---- logs, errors, summary, dashboard (mirrors internal/runner and internal/logsink)
+
+export interface LogRow {
+  id: number
+  tMs: number
+  sec: number
+  vu: number
+  iter: number
+  keyId: number
+  status: number
+  category: string
+  latencyMs: number
+  reason: 'error' | 'sample' | 'slowest'
+  error: string
+}
+
+export interface LogDetail extends LogRow {
+  timing: Timing
+  request: { method: string; url: string; headers: Record<string, string[]>; body: string; bodySize: number; truncated: boolean } | null
+  response: { status: number; headers: Record<string, string[]>; body: string; bodySize: number; truncated: boolean } | null
+}
+
+export interface ErrorGroup {
+  keyId: number
+  category: string
+  message: string
+  count: number
+  exampleLogId: number | null
+  firstSec: number
+  lastSec: number
+}
+
+export interface ErrorsView {
+  groups: ErrorGroup[]
+  byCategory: Record<string, number>
+  droppedLogs: number
+}
+
+export interface IntervalRow {
+  fromSec: number
+  toSec: number
+  count: number
+  ok: number
+  err: number
+  rps: number
+  avg: number
+  p50: number
+  p90: number
+  p95: number
+  p99: number
+  max: number
+}
+
+export interface StatusRow {
+  keyId: number
+  code: string
+  count: number
+}
+
+export interface DashboardStat {
+  runs: number
+  passed: number
+  finished: number
+  requests: number
+  errors: number
+  passRate: number
+}
+
+export interface Dashboard {
+  active: Run | null
+  today: DashboardStat
+  week: DashboardStat
+  recent: Run[]
 }

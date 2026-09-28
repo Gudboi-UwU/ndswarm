@@ -168,3 +168,20 @@ func TestSend(t *testing.T) {
 		t.Errorf("follow status %d", res.Status)
 	}
 }
+
+func TestGuardAllowlist(t *testing.T) {
+	g := Guard{Allow: []string{"api.example.com", "*.internal.test"}}
+	for host, want := range map[string]bool{"api.example.com": true, "API.example.com.": true, "a.internal.test": true, "internal.test": false, "evil.com": false, "127.0.0.1": false} {
+		if got := g.allows(host); got != want {
+			t.Errorf("allows(%q) = %v, want %v", host, got, want)
+		}
+	}
+	srv := httptest.NewServer(dummy.Handler())
+	defer srv.Close()
+	cs, _ := Compile(model.Step{Method: "GET", URL: srv.URL + "/fast"}, nil)
+	r, _ := cs.Render(tmpl.NewCtx(1, nil, nil), 0)
+	res := Send(context.Background(), Client(NewTransport(ClientOptions{Guard: g}), true), r, time.Second)
+	if !errors.Is(res.Err, ErrNotAllowed) {
+		t.Errorf("host outside allowlist reached: %v", res.Err)
+	}
+}

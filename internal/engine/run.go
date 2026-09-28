@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Gudboi-UwU/ndswarm/internal/logsink"
 	"github.com/Gudboi-UwU/ndswarm/internal/metrics"
 	"github.com/Gudboi-UwU/ndswarm/internal/model"
 	"github.com/Gudboi-UwU/ndswarm/internal/tmpl"
@@ -32,7 +33,9 @@ type Plan struct {
 	Keys     []Key
 	Load     model.Load
 	Settings model.Settings
+	Guard    Guard // set by the caller from server settings
 	env      *model.Environment
+	redact   Redactor
 	flows    []planFlow
 	weights  picker
 }
@@ -78,7 +81,10 @@ func (p picker) pick(r *rand.Rand) int {
 
 // NewPlan compiles t against env. It fails when nothing would run or there are too many keys.
 func NewPlan(t model.Test, env *model.Environment) (*Plan, error) {
-	p := &Plan{Load: t.Load, Settings: t.Settings, env: env}
+	p := &Plan{Load: t.Load, Settings: t.Settings, env: env, redact: NewRedactor(nil)}
+	if env != nil {
+		p.redact = NewRedactor(env.SecretValues())
+	}
 	var weights []int
 	for _, f := range t.Flows {
 		if !f.Enabled || f.Weight <= 0 {
@@ -153,8 +159,9 @@ type Tick struct {
 // Run executes p until the stages end or ctx is cancelled. onTick runs on the calling goroutine.
 // On a normal end VUs finish their iteration (up to gracefulStopSec); on cancel they stop at once
 // and interrupted requests are not counted.
-func Run(ctx context.Context, p *Plan, rec *metrics.Recorder, onTick func(Tick)) {
-	transport := NewTransport(ClientOptions{MaxConnsPerHost: p.Load.MaxVUs, HTTP2: p.Settings.HTTP2, InsecureTLS: p.Settings.InsecureTLS})
+// logs may be nil (no request logging).
+func Run(ctx context.Context, p *Plan, rec *metrics.Recorder, logs *logsink.Sink, onTick func(Tick)) {
+	transport := NewTransport(ClientOptions{MaxConnsPerHost: p.Load.MaxVUs, HTTP2: p.Settings.HTTP2, InsecureTLS: p.Settings.InsecureTLS, Guard: p.Guard})
 	transport.DisableKeepAlives = !p.Settings.KeepAlive
 	defer transport.CloseIdleConnections()
 
@@ -169,9 +176,11 @@ func Run(ctx context.Context, p *Plan, rec *metrics.Recorder, onTick func(Tick))
 		seq:      new(atomic.Int64),
 		alive:    make([]atomic.Bool, p.Load.MaxVUs),
 		ua:       p.Settings.UserAgent,
+		logs:     logs,
+		start:    time.Now(),
 	}
 
-	start := time.Now()
+	start := r.start
 	elapsed := func() float64 { return time.Since(start).Seconds() }
 	duration := float64(p.Load.DurationSec())
 	sched := time.NewTicker(100 * time.Millisecond)
@@ -229,6 +238,8 @@ type runner struct {
 	follow, noFollow *http.Client
 	seq              *atomic.Int64
 	ua               string
+	logs             *logsink.Sink
+	start            time.Time
 
 	target  atomic.Int64
 	running atomic.Int64
@@ -280,16 +291,20 @@ func (r *runner) vu(id int) {
 func (r *runner) step(c *tmpl.Ctx, st *planStep, envErr error) bool {
 	vi := st.variant(st.Pick, c.Rand)
 	key := st.keys[min(vi, len(st.keys)-1)]
-	if envErr != nil {
-		r.rec.Record(key, metrics.Sample{Category: "template"})
-		return sleep(r.ctx, 10*time.Millisecond)
+	if envErr == nil {
+		req, err := st.Render(c, vi)
+		if err == nil {
+			return r.send(c, st, key, req)
+		}
+		envErr = err
 	}
-	req, err := st.Render(c, vi)
-	if err != nil {
-		// ponytail: a template that fails only at run time is retried every 10ms; preflight renders every variant first.
-		r.rec.Record(key, metrics.Sample{Category: "template"})
-		return sleep(r.ctx, 10*time.Millisecond)
-	}
+	// ponytail: a template that fails only at run time is retried every 10ms; preflight renders every variant first.
+	r.rec.Record(key, metrics.Sample{Category: "template"})
+	r.log(c, key, nil, Result{Err: envErr, Category: "template"})
+	return sleep(r.ctx, 10*time.Millisecond)
+}
+
+func (r *runner) send(c *tmpl.Ctx, st *planStep, key int, req *Request) bool {
 	if r.ua != "" && req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", r.ua)
 	}
@@ -301,8 +316,37 @@ func (r *runner) step(c *tmpl.Ctx, st *planStep, envErr error) bool {
 	if r.ctx.Err() != nil {
 		return false // stopped mid-request: not a real result
 	}
-	r.rec.Record(key, ToSample(res))
+	sample := ToSample(res)
+	res.Category = sample.Category
+	r.rec.Record(key, sample)
+	r.log(c, key, req, res)
 	return true
+}
+
+// log offers one finished request to the log sink; the entry is only built when it is kept.
+func (r *runner) log(c *tmpl.Ctx, key int, req *Request, res Result) {
+	if r.logs == nil {
+		return
+	}
+	sec := int64(time.Since(r.start).Seconds()) + 1 // 1-based, like the per-second metrics (t=1 is the first second)
+	msg := ""
+	if res.Category != "" {
+		msg = r.plan.redact.String(errorMessage(res)) // group messages are shown and stored too
+		r.logs.CountError(key, res.Category, msg, sec)
+	}
+	reason := r.logs.Want(key, res.Category, res.Timing.Total, c.Rand)
+	if reason == "" {
+		return
+	}
+	r.logs.Add(r.plan.entry(c, key, sec, reason, msg, req, res))
+}
+
+// errorMessage is the text an error group is keyed on.
+func errorMessage(res Result) string {
+	if res.Err != nil {
+		return res.Err.Error()
+	}
+	return fmt.Sprintf("HTTP %d %s", res.Status, http.StatusText(res.Status))
 }
 
 // ToSample converts a Result into a metrics sample with the OK/error definition:
