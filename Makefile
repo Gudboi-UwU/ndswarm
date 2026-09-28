@@ -6,7 +6,7 @@ GO_BUILD := CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(V
 # Go server on :8089, dummy target on :8090, Vite on :5173 (proxies /api to Go). Ctrl+C stops all.
 dev: web/node_modules | web/dist
 	@trap 'kill 0' INT TERM EXIT; \
-	NDSWARM_LOG_LEVEL=debug go run ./cmd/ndswarm & \
+	NDSWARM_DATA_DIR=.data NDSWARM_LOG_LEVEL=debug go run ./cmd/ndswarm & \
 	go run ./cmd/dummytarget & \
 	npm --prefix web run dev
 
