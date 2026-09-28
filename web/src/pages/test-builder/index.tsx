@@ -119,7 +119,7 @@ function Builder({ saved }: { saved: Test }) {
     setSelected(flows.length)
   }
   const ctx = useMemo(
-    () => ({ errors: shownErrors, environmentId: draft.environmentId, variables: env?.variables ?? [], generators: generators.data ?? [], readOnly }),
+    () => ({ errors: shownErrors, environmentId: draft.environmentId, baseUrl: env?.baseUrl ?? '', variables: env?.variables ?? [], generators: generators.data ?? [], readOnly }),
     [shownErrors, draft.environmentId, env, generators.data, readOnly],
   )
 
@@ -128,15 +128,12 @@ function Builder({ saved }: { saved: Test }) {
       <div className="grid gap-6">
         <header className="grid gap-3">
           <nav className="text-sm text-muted-foreground">
-            <Link to="/projects" className="hover:text-foreground">
-              Projects
+            <Link to="/tests" className="hover:text-foreground">
+              Tests
             </Link>
             {' / '}
             <Link to={`/projects/${saved.projectId}`} className="hover:text-foreground">
               {project.data?.name ?? '...'}
-            </Link>
-            <Link to={`/runs?testId=${saved.id}`} className="ml-4 hover:text-foreground">
-              Past runs
             </Link>
           </nav>
           <div className="flex flex-wrap items-center gap-3">
@@ -146,56 +143,65 @@ function Builder({ saved }: { saved: Test }) {
               readOnly={readOnly}
               aria-invalid={shownErrors.get('name') ? true : undefined}
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+              title="Click to rename"
               className="h-10 max-w-md border-transparent bg-transparent px-2 text-xl font-semibold shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent"
             />
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              Server
             <Select
               value={draft.environmentId === null ? 'none' : String(draft.environmentId)}
               // Radix reports "" while the chosen option is not rendered yet (environments still loading).
               onValueChange={(v) => v && setDraft((d) => ({ ...d, environmentId: v === 'none' ? null : Number(v) }))}
               disabled={readOnly}
             >
-              <SelectTrigger aria-label="Environment" className="w-48">
+              <SelectTrigger aria-label="Server" className="w-72">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No environment</SelectItem>
+                <SelectItem value="none">None: every request has a full URL</SelectItem>
                 {envs.data?.map((e) => (
                   <SelectItem key={e.id} value={String(e.id)}>
-                    {e.name}
+                    {e.baseUrl && !e.baseUrl.includes(e.name) ? `${e.name} (${e.baseUrl})` : e.baseUrl || e.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            </label>
             <div className="ml-auto flex items-center gap-3">
+              <Button variant="ghost" size="sm" asChild>
+                <Link to={`/runs?testId=${saved.id}`}>Past runs</Link>
+              </Button>
               {readOnly ? (
                 !me?.can.run && <span className="text-sm text-muted-foreground">Read only</span>
               ) : (
-                <>
-                  {dirty && <span className="text-sm text-muted-foreground">Unsaved changes</span>}
-                  <Button variant={dirty ? 'default' : 'outline'} onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
-                    {save.isPending ? 'Saving' : 'Save'}
-                  </Button>
-                </>
+                <Button variant="outline" onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
+                  {save.isPending ? 'Saving' : dirty ? 'Save' : 'Saved'}
+                </Button>
               )}
               {me?.can.run && (
-                <StartButton testId={saved.id} blockedReason={dirty ? 'Save your changes first.' : flows.length === 0 ? 'Add an endpoint first.' : undefined} />
+                <StartButton
+                  testId={saved.id}
+                  blockedReason={flows.length === 0 ? 'Add a request first.' : undefined}
+                  // Running always uses the saved test, so unsaved edits are saved first.
+                  beforeStart={dirty && !readOnly ? async () => (await save.mutateAsync().then(() => true, () => false)) : undefined}
+                />
               )}
             </div>
           </div>
           {shownErrors.get('name') && <p className="text-sm text-destructive">{shownErrors.get('name')}</p>}
-          {env && !env.baseUrl && <p className="text-sm text-muted-foreground">{env.name} has no base URL, so endpoints need full URLs.</p>}
+          {env && !env.baseUrl && <p className="text-sm text-muted-foreground">{env.name} has no address, so every request needs a full URL.</p>}
         </header>
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="endpoints" className={cn(hasErrorUnder(shownErrors, 'flows') && 'text-destructive')}>
-              Endpoints
+              Requests
             </TabsTrigger>
             <TabsTrigger value="load" className={cn(hasErrorUnder(shownErrors, 'load') && 'text-destructive')}>
               Load
             </TabsTrigger>
             <TabsTrigger value="settings" className={cn(hasErrorUnder(shownErrors, 'settings') && 'text-destructive')}>
-              Settings
+              Options
             </TabsTrigger>
           </TabsList>
           <TabsContent value="load" className="mt-6">
@@ -214,22 +220,26 @@ function Builder({ saved }: { saved: Test }) {
         {flows.length === 0 ? (
           <EmptyState
             icon={<RouteIcon />}
-            title="No endpoints yet"
+            title="No requests yet"
             action={
               !readOnly && (
                 <Button onClick={add}>
                   <PlusIcon />
-                  Add endpoint
+                  Add a request
                 </Button>
               )
             }
           >
-            Each endpoint is one request. During a run, every virtual user picks endpoints by their weight.
+            Add the requests your users make, such as opening a page or creating an order.
           </EmptyState>
         ) : (
           <div className="grid items-start gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
             <aside className="grid gap-2 lg:sticky lg:top-6">
-              <ul className="grid gap-1" aria-label="Endpoints">
+              <div className="px-2">
+                <h2 className="text-sm font-medium">Requests</h2>
+                <p className="text-xs text-muted-foreground">Each simulated user keeps sending these, picked by traffic share.</p>
+              </div>
+              <ul className="grid gap-1" aria-label="Requests">
                 {flows.map((f, i) => {
                   const s = f.steps[0]
                   const pct = share(f)
@@ -243,7 +253,7 @@ function Builder({ saved }: { saved: Test }) {
                       >
                         <Switch
                           size="sm"
-                          aria-label={`Include ${f.name} in runs`}
+                          aria-label={`Send ${f.name} during runs`}
                           checked={f.enabled}
                           disabled={readOnly}
                           onCheckedChange={(on) => setFlows(flows.map((x, j) => (j === i ? { ...x, enabled: on, steps: [{ ...x.steps[0], enabled: on }] } : x)))}
@@ -265,22 +275,22 @@ function Builder({ saved }: { saved: Test }) {
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" onClick={add} disabled={flows.length >= 100}>
                     <PlusIcon />
-                    Add endpoint
+                    Add request
                   </Button>
-                  <Button variant="ghost" size="icon-sm" aria-label="Duplicate selected endpoint" onClick={() => {
+                  <Button variant="ghost" size="icon-sm" aria-label="Duplicate selected request" onClick={() => {
                     setFlows([...flows.slice(0, sel + 1), cloneFlow(flows[sel]), ...flows.slice(sel + 1)])
                     setSelected(sel + 1)
                   }}>
                     <CopyIcon />
                   </Button>
-                  <Button variant="ghost" size="icon-sm" aria-label="Delete selected endpoint" onClick={() => setDeleting(sel)}>
+                  <Button variant="ghost" size="icon-sm" aria-label="Delete selected request" onClick={() => setDeleting(sel)}>
                     <Trash2Icon />
                   </Button>
                 </div>
               )}
             </aside>
             <fieldset disabled={readOnly} className="min-w-0 rounded-lg border p-4 md:p-6">
-              <legend className="sr-only">Endpoint {flows[sel].name}</legend>
+              <legend className="sr-only">Request {flows[sel].name}</legend>
               <EndpointEditor
                 key={flows[sel].id}
                 flow={flows[sel]}
@@ -299,8 +309,8 @@ function Builder({ saved }: { saved: Test }) {
       <ConfirmDelete
         target={deleting}
         title={`Delete ${deleting !== null ? flows[deleting]?.name : ''}?`}
-        description="The endpoint is removed from this test when you save."
-        confirm="Delete endpoint"
+        description="The request is removed from this test when you save."
+        confirm="Delete request"
         onConfirm={() => {
           if (deleting === null) return
           setFlows(flows.filter((_, j) => j !== deleting))

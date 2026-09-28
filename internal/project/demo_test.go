@@ -31,6 +31,10 @@ func TestSeedDemo(t *testing.T) {
 	if err != nil || test.Validate() != nil || len(test.Flows) != 5 {
 		t.Errorf("demo test invalid: %v %v", err, test.Validate())
 	}
+	all, err := s.ListAllTests(ctx)
+	if err != nil || len(all) != 1 || all[0].ProjectName != "Demo shop" || all[0].TargetURL != "http://dummytarget:8090" {
+		t.Errorf("all tests %+v %v", all, err)
+	}
 	s.DeleteProject(ctx, projects[0].ID)
 	if seeded, _ := s.SeedDemo(ctx, "x"); seeded {
 		t.Error("demo seeded twice")

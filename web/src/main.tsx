@@ -7,6 +7,7 @@ import { createBrowserRouter, RouterProvider } from 'react-router'
 import { meKey } from '@/api/auth'
 import { ApiError } from '@/api/client'
 import { AppShell, RequireAccess } from '@/components/app-shell'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Toaster } from '@/components/ui/sonner'
 import { DashboardPage } from '@/pages/dashboard'
 import { LoginPage } from '@/pages/login'
@@ -15,6 +16,7 @@ import { ProjectPage } from '@/pages/project'
 import { ProjectsPage } from '@/pages/projects'
 import { RunPage } from '@/pages/run'
 import { RunsPage } from '@/pages/runs'
+import { TestsPage } from '@/pages/tests'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { SettingsPage } from '@/pages/settings'
 import { SetupPage } from '@/pages/setup'
@@ -44,12 +46,13 @@ const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <DashboardPage /> },
+          { path: 'tests', element: <TestsPage /> },
           { path: 'projects', element: <ProjectsPage /> },
           { path: 'projects/:id', element: <ProjectPage /> },
           {
             path: 'tests/:id',
             element: (
-              <Suspense fallback={null}>
+              <Suspense fallback={<Skeleton className="h-96 w-full" />}>
                 <TestBuilderPage />
               </Suspense>
             ),

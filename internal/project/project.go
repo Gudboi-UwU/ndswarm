@@ -199,6 +199,33 @@ type TestSummary struct {
 	EnvironmentID *int64 `json:"environmentId"`
 	Endpoints     int    `json:"endpoints"`
 	UpdatedAt     int64  `json:"updatedAt"`
+	ProjectID     int64  `json:"projectId,omitempty"`
+	ProjectName   string `json:"projectName,omitempty"`
+	TargetName    string `json:"targetName,omitempty"`
+	TargetURL     string `json:"targetUrl,omitempty"`
+}
+
+// ListAllTests returns every test, newest change first, with its project.
+func (s *Service) ListAllTests(ctx context.Context) ([]TestSummary, error) {
+	rows, err := s.db.R.QueryContext(ctx, `
+		SELECT t.id, t.name, t.description, t.environment_id, json_array_length(t.config_json, '$.flows'), t.updated_at,
+			t.project_id, p.name, coalesce(e.name, ''), coalesce(json_extract(e.config_json, '$.baseUrl'), '')
+		FROM tests t JOIN projects p ON p.id = t.project_id LEFT JOIN environments e ON e.id = t.environment_id
+		ORDER BY t.updated_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TestSummary{}
+	for rows.Next() {
+		var t TestSummary
+		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.EnvironmentID, &t.Endpoints, &t.UpdatedAt,
+			&t.ProjectID, &t.ProjectName, &t.TargetName, &t.TargetURL); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
 }
 
 func (s *Service) ListTests(ctx context.Context, projectID int64) ([]TestSummary, error) {

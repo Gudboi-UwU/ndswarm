@@ -9,13 +9,31 @@ import { TemplateInput } from './template-input'
 
 const TYPES: FieldType[] = ['string', 'integer', 'number', 'boolean', 'object', 'array', 'null']
 const FLAT: FieldType[] = ['string', 'integer', 'number', 'boolean', 'null']
+const typeLabel: Record<FieldType, string> = {
+  string: 'text',
+  integer: 'whole number',
+  number: 'decimal number',
+  boolean: 'true / false',
+  object: 'object',
+  array: 'list',
+  null: 'null',
+}
 
 /** Typed body fields. Nested objects and arrays only for JSON bodies. */
 export function FieldsEditor({ fields, onChange, path, nested }: { fields: Field[]; onChange: (f: Field[]) => void; path: string; nested: boolean }) {
   const { readOnly } = useBuilder()
   return (
     <div className="grid gap-2">
-      {fields.length === 0 && <p className="text-sm text-muted-foreground">No fields. The body is {nested ? 'an empty object' : 'empty'}.</p>}
+      {fields.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No fields yet. The body is {nested ? 'an empty JSON object {}' : 'empty'}.</p>
+      ) : (
+        <div className="grid grid-cols-[minmax(0,1fr)_9rem_minmax(0,1.6fr)_auto] gap-2 text-xs text-muted-foreground">
+          <span>Field name</span>
+          <span>Type</span>
+          <span>Value (fixed, or generated with the wand)</span>
+          <span className="w-16" aria-hidden="true" />
+        </div>
+      )}
       <FieldRows fields={fields} onChange={onChange} path={path} depth={0} nested={nested} />
       {!readOnly && (
         <div>
@@ -79,11 +97,11 @@ function FieldRow({
 
   return (
     <>
-      <div className="grid grid-cols-[minmax(0,1fr)_7.5rem_minmax(0,1.6fr)_auto] items-start gap-2" style={{ paddingLeft: depth * 20 }}>
+      <div className="grid grid-cols-[minmax(0,1fr)_9rem_minmax(0,1.6fr)_auto] items-start gap-2" style={{ paddingLeft: depth * 20 }}>
         <div className="flex items-start gap-1.5">
           {depth > 0 && <CornerDownRightIcon className="mt-2.5 size-3.5 shrink-0 text-muted-foreground" />}
           {arrayItem ? (
-            <span className="mt-2 text-sm text-muted-foreground">each item</span>
+            <span className="mt-2 text-sm text-muted-foreground">each list item</span>
           ) : (
             <div className="min-w-0 flex-1">
               <Input
@@ -106,7 +124,7 @@ function FieldRow({
             <SelectContent>
               {(nested ? TYPES : FLAT).map((t) => (
                 <SelectItem key={t} value={t}>
-                  {t}
+                  {typeLabel[t]}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -114,7 +132,7 @@ function FieldRow({
         </div>
         <div>
           {f.type === 'object' ? (
-            <p className="mt-2 text-sm text-muted-foreground">{f.children.length} field(s) below</p>
+            <p className="mt-2 text-sm text-muted-foreground">{f.children.length} field{f.children.length === 1 ? '' : 's'} inside, below</p>
           ) : f.type === 'array' ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Input

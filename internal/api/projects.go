@@ -30,6 +30,7 @@ func (s *Server) projectRoutes(r chi.Router) {
 	r.With(edit).Put("/environments/{id}", s.updateEnvironment)
 	r.With(edit).Delete("/environments/{id}", s.deleteEnvironment)
 
+	r.With(view).Get("/tests", s.listAllTests)
 	r.With(view).Get("/projects/{id}/tests", s.listTests)
 	r.With(edit).Post("/projects/{id}/tests", s.createTest)
 	r.With(view).Get("/tests/{id}", s.getTest)
@@ -132,6 +133,10 @@ func (s *Server) listTests(w http.ResponseWriter, r *http.Request) {
 	if id, ok := pathID(w, r); ok {
 		respond(w, r, http.StatusOK)(s.Projects.ListTests(r.Context(), id))
 	}
+}
+
+func (s *Server) listAllTests(w http.ResponseWriter, r *http.Request) {
+	respond(w, r, http.StatusOK)(s.Projects.ListAllTests(r.Context()))
 }
 
 func (s *Server) getTest(w http.ResponseWriter, r *http.Request) {

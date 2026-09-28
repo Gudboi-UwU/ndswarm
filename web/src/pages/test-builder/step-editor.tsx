@@ -1,17 +1,22 @@
-import { useState, type ReactNode } from 'react'
+import { CircleHelpIcon, SendIcon } from 'lucide-react'
+import { useState } from 'react'
 import type { ApiError } from '@/api/client'
 import type { Flow, Method, Step } from '@/api/types'
+import { Disclosure } from '@/components/disclosure'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { BodyEditor } from './body-editor'
-import { METHODS, useBuilder } from './draft'
+import { bodyLabel, hasErrorUnder, METHODS, useBuilder } from './draft'
 import { KVEditor } from './kv-editor'
 import { TemplateInput } from './template-input'
-import { TryPanel } from './try-panel'
+import { TryResultView } from './try-panel'
+import { useTry } from './use-try'
 
-/** Editor for one endpoint (a flow with a single step). */
+/** Editor for one request. The address bar comes first; everything optional starts folded. */
 export function EndpointEditor({
   flow,
   index,
@@ -25,8 +30,9 @@ export function EndpointEditor({
   onChange: (f: Flow) => void
   onTryErrors: (e: ApiError) => void
 }) {
-  const { errors, environmentId } = useBuilder()
+  const { errors, environmentId, baseUrl, readOnly } = useBuilder()
   const [variant, setVariant] = useState(0)
+  const send = useTry(onTryErrors)
   const step = flow.steps[0]
   const path = `flows.${index}.steps.0`
   const setStep = (patch: Partial<Step>) => {
@@ -34,32 +40,16 @@ export function EndpointEditor({
     onChange({ ...flow, name: s.name, enabled: s.enabled, steps: [s] })
   }
   const nameErr = errors.get(`${path}.name`) ?? errors.get(`flows.${index}.name`)
+  const urlErr = errors.get(`${path}.url`) ?? errors.get(`${path}.method`)
+  const full = fullUrl(baseUrl, step.url)
+  const queryCount = step.query.filter((q) => q.enabled).length
+  const headerCount = step.headers.filter((h) => h.enabled).length
 
   return (
-    <div className="grid gap-8">
-      <div className="grid gap-4">
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-          <div className="grid gap-2">
-            <Label htmlFor="ep-name">Endpoint name</Label>
-            <Input id="ep-name" value={step.name} aria-invalid={nameErr ? true : undefined} onChange={(e) => setStep({ name: e.target.value })} />
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="ep-weight">Weight</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                id="ep-weight"
-                type="number"
-                min={0}
-                className="w-20 font-mono"
-                value={flow.weight}
-                onChange={(e) => onChange({ ...flow, weight: Math.max(0, Number(e.target.value)) })}
-              />
-              <span className="w-12 text-sm text-muted-foreground tabular-nums">{share === null ? 'off' : `${share.toFixed(0)}%`}</span>
-            </div>
-          </div>
-        </div>
-        {nameErr && <p className="-mt-2 text-sm text-destructive">{nameErr}</p>}
-        <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-start gap-2">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
+      <div className="grid gap-2">
+        <Label htmlFor="ep-url">Request</Label>
+        <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-2 sm:grid-cols-[6.5rem_minmax(0,1fr)_auto]">
           <Select value={step.method} onValueChange={(m) => setStep({ method: m as Method })}>
             <SelectTrigger aria-label="Method" className="w-full font-mono">
               <SelectValue />
@@ -72,56 +62,95 @@ export function EndpointEditor({
               ))}
             </SelectContent>
           </Select>
-          <TemplateInput aria-label="URL" placeholder="/orders/{{int 1 500}}" value={step.url} onChange={(url) => setStep({ url })} error={errors.get(`${path}.url`) ?? errors.get(`${path}.method`)} />
+          <TemplateInput id="ep-url" aria-label="URL" placeholder="/products" value={step.url} onChange={(url) => setStep({ url })} error={urlErr} />
+          <Button type="button" variant="outline" className="col-span-2 sm:col-span-1" disabled={send.isPending} onClick={() => send.mutate({ step, environmentId, variant })}>
+            <SendIcon />
+            {send.isPending ? 'Sending' : 'Send test request'}
+          </Button>
         </div>
-        <p className="-mt-2 text-sm text-muted-foreground">A path is joined to the environment's base URL. A full URL is used as is.</p>
+        {!urlErr && (
+          <p className="truncate font-mono text-xs text-muted-foreground" title={full ?? undefined}>
+            {full ?? 'This is a path, but the test has no server address. Choose a target at the top, or enter a full URL.'}
+          </p>
+        )}
       </div>
 
-      <Section title="Query parameters" hint="Values are URL-encoded for you.">
-        <KVEditor items={step.query} onChange={(query) => setStep({ query })} path={`${path}.query`} keyLabel="Parameter" />
-      </Section>
+      <TryResultView run={send} />
 
-      <Section title="Headers" hint="Override the environment's default headers with the same name.">
-        <KVEditor items={step.headers} onChange={(headers) => setStep({ headers })} path={`${path}.headers`} keyLabel="Header" />
-      </Section>
-
-      <BodyEditor body={step.body} onChange={(body) => setStep({ body })} path={`${path}.body`} selected={variant} onSelect={setVariant} />
-
-      <Section title="Options">
-        <div className="flex flex-wrap items-end gap-6">
-          <div className="grid gap-2">
-            <Label htmlFor="ep-timeout">Timeout (ms)</Label>
-            <Input
-              id="ep-timeout"
-              type="number"
-              min={1}
-              className="w-32 font-mono"
-              value={step.timeoutMs}
-              aria-invalid={errors.get(`${path}.timeoutMs`) ? true : undefined}
-              onChange={(e) => setStep({ timeoutMs: Number(e.target.value) })}
-            />
-          </div>
-          <label className="flex items-center gap-2 pb-1.5 text-sm">
-            <Switch checked={step.followRedirects} onCheckedChange={(followRedirects) => setStep({ followRedirects })} />
-            Follow redirects
-          </label>
+      <div className="grid grid-cols-[minmax(0,1fr)] items-end gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="grid gap-2">
+          <Label htmlFor="ep-name">Name in results</Label>
+          <Input id="ep-name" value={step.name} aria-invalid={nameErr ? true : undefined} onChange={(e) => setStep({ name: e.target.value })} />
         </div>
-        {errors.get(`${path}.timeoutMs`) && <p className="text-sm text-destructive">{errors.get(`${path}.timeoutMs`)}</p>}
-      </Section>
+        <div className="grid gap-2">
+          <Label htmlFor="ep-weight" className="flex items-center gap-1">
+            Traffic share
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" aria-label="About traffic share" className="text-muted-foreground">
+                  <CircleHelpIcon className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-64">
+                How often users pick this request compared with the others. A weight of 2 is picked twice as often as a weight of 1.
+              </TooltipContent>
+            </Tooltip>
+          </Label>
+          <div className="flex items-center gap-2">
+            <Input id="ep-weight" type="number" min={0} className="w-20 font-mono" value={flow.weight} onChange={(e) => onChange({ ...flow, weight: Math.max(0, Number(e.target.value)) })} />
+            <span className="w-36 text-sm whitespace-nowrap text-muted-foreground tabular-nums">{share === null ? 'not sent' : `${share.toFixed(0)}% of requests`}</span>
+          </div>
+        </div>
+      </div>
+      {nameErr && <p className="-mt-3 text-sm text-destructive">{nameErr}</p>}
 
-      <TryPanel step={step} environmentId={environmentId} variant={variant} onValidationError={onTryErrors} />
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
+        <Disclosure title="Query parameters" summary={queryCount ? `${queryCount} set` : 'none'} defaultOpen={step.query.length > 0} error={hasErrorUnder(errors, `${path}.query`)}>
+          <p className="mb-3 text-sm text-muted-foreground">Added after ? in the URL, and encoded for you.</p>
+          <KVEditor items={step.query} onChange={(query) => setStep({ query })} path={`${path}.query`} keyLabel="Parameter" />
+        </Disclosure>
+        <Disclosure title="Headers" summary={headerCount ? `${headerCount} set` : 'none'} defaultOpen={step.headers.length > 0} error={hasErrorUnder(errors, `${path}.headers`)}>
+          <p className="mb-3 text-sm text-muted-foreground">Sent with this request. They replace target headers with the same name.</p>
+          <KVEditor items={step.headers} onChange={(headers) => setStep({ headers })} path={`${path}.headers`} keyLabel="Header" />
+        </Disclosure>
+        <Disclosure title="Body" summary={bodyLabel(step.body)} defaultOpen={step.body.type !== 'none'} error={hasErrorUnder(errors, `${path}.body`)}>
+          <BodyEditor body={step.body} onChange={(body) => setStep({ body })} path={`${path}.body`} selected={variant} onSelect={setVariant} />
+        </Disclosure>
+        <Disclosure
+          title="More options"
+          summary={`times out after ${step.timeoutMs / 1000} s, ${step.followRedirects ? 'follows' : 'does not follow'} redirects`}
+          error={!!errors.get(`${path}.timeoutMs`)}
+        >
+          <div className="flex flex-wrap items-end gap-6">
+            <div className="grid gap-2">
+              <Label htmlFor="ep-timeout">Give up after (ms)</Label>
+              <Input
+                id="ep-timeout"
+                type="number"
+                min={1}
+                className="w-32 font-mono"
+                value={step.timeoutMs}
+                aria-invalid={errors.get(`${path}.timeoutMs`) ? true : undefined}
+                onChange={(e) => setStep({ timeoutMs: Number(e.target.value) })}
+              />
+            </div>
+            <label className="flex items-center gap-2 pb-1.5 text-sm">
+              <Switch checked={step.followRedirects} disabled={readOnly} onCheckedChange={(followRedirects) => setStep({ followRedirects })} />
+              Follow redirects
+            </label>
+          </div>
+          {errors.get(`${path}.timeoutMs`) && <p className="mt-2 text-sm text-destructive">{errors.get(`${path}.timeoutMs`)}</p>}
+          <p className="mt-2 text-sm text-muted-foreground">A request that takes longer counts as a timeout failure.</p>
+        </Disclosure>
+      </div>
     </div>
   )
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <section className="grid gap-3">
-      <div>
-        <h3 className="text-sm font-medium">{title}</h3>
-        {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
-      </div>
-      {children}
-    </section>
-  )
+/** The address a path resolves to, for a quick sanity check. */
+function fullUrl(base: string, url: string): string | null {
+  const u = url.trim()
+  if (/^https?:\/\//.test(u)) return u
+  if (!base) return null
+  return base.replace(/\/+$/, '') + '/' + u.replace(/^\/+/, '')
 }

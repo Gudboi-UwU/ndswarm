@@ -13,20 +13,46 @@ import { RawEditor } from './raw-editor'
 type Body = Step['body']
 
 const bodyTypes: { value: BodyType; label: string }[] = [
-  { value: 'none', label: 'No body' },
+  { value: 'none', label: 'None' },
   { value: 'json', label: 'JSON' },
-  { value: 'form', label: 'Form (urlencoded)' },
-  { value: 'multipart', label: 'Multipart form' },
-  { value: 'raw', label: 'Raw text' },
+  { value: 'form', label: 'Form' },
+  { value: 'multipart', label: 'Multipart' },
+  { value: 'raw', label: 'Text' },
 ]
 
-/** Body type, then one or more variants; each run request uses one variant. */
+/** Segmented control: every option visible, one click to switch. */
+function Segmented<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  const { readOnly } = useBuilder()
+  return (
+    <div className="flex w-fit rounded-md border p-0.5" role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          disabled={readOnly}
+          onClick={() => onChange(o.value)}
+          className={cn('rounded px-3 py-1 text-sm', value === o.value ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground')}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Body type first. A body has one variation by default; more variations (different bodies
+ * sent in turn, at random or by weight) only appear once someone adds one.
+ */
 export function BodyEditor({ body, onChange, path, selected, onSelect }: { body: Body; onChange: (b: Body) => void; path: string; selected: number; onSelect: (i: number) => void }) {
   const { errors, readOnly } = useBuilder()
   const set = (patch: Partial<Body>) => onChange({ ...body, ...patch })
   const variants = body.variants
   const vi = Math.min(selected, Math.max(variants.length - 1, 0))
   const v = variants[vi]
+  const many = variants.length > 1
   const setVariant = (patch: Partial<Variant>) => set({ variants: variants.map((x, i) => (i === vi ? { ...x, ...patch } : x)) })
 
   const setType = (type: BodyType) => {
@@ -41,150 +67,138 @@ export function BodyEditor({ body, onChange, path, selected, onSelect }: { body:
     onChange(next)
   }
   const addVariant = (from?: Variant) => {
-    const nv = from ? { ...structuredClone(from), id: uid(), name: `${from.name} copy` } : { ...newVariant(variants.length + 1), mode: body.type === 'raw' ? ('raw' as const) : ('fields' as const) }
+    const nv = from
+      ? { ...structuredClone(from), id: uid(), name: `${from.name} copy` }
+      : { ...newVariant(variants.length + 1), mode: body.type === 'raw' ? ('raw' as const) : ('fields' as const) }
     set({ variants: [...variants, nv] })
     onSelect(variants.length)
   }
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="grid gap-2">
-          <Label htmlFor={`${path}-type`}>Body</Label>
-          <Select value={body.type} onValueChange={(t) => setType(t as BodyType)}>
-            <SelectTrigger id={`${path}-type`} className="w-48">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {bodyTypes.map((t) => (
-                <SelectItem key={t.value} value={t.value}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        {body.type === 'raw' && (
-          <div className="grid gap-2">
-            <Label htmlFor={`${path}-ct`}>Content-Type</Label>
-            <Input id={`${path}-ct`} className="w-56 font-mono text-[13px]" placeholder="text/plain" value={body.contentType} onChange={(e) => set({ contentType: e.target.value })} />
-          </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Segmented label="Body type" value={body.type} options={bodyTypes} onChange={setType} />
+        {body.type === 'json' && v && (
+          <Segmented
+            label="Edit as"
+            value={v.mode}
+            options={[
+              { value: 'fields', label: 'Fields' },
+              { value: 'raw', label: 'Raw JSON' },
+            ]}
+            onChange={(mode) => setVariant({ mode })}
+          />
         )}
-        {variants.length > 1 && (
-          <div className="grid gap-2">
-            <Label htmlFor={`${path}-pick`}>Use variants</Label>
-            <Select value={body.variantPick} onValueChange={(p) => set({ variantPick: p as Body['variantPick'] })}>
-              <SelectTrigger id={`${path}-pick`} className="w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="roundRobin">In turn</SelectItem>
-                <SelectItem value="random">At random</SelectItem>
-                <SelectItem value="weighted">By weight</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        {body.type === 'raw' && (
+          <Input aria-label="Content-Type" className="w-56 font-mono text-[13px]" placeholder="Content-Type: text/plain" value={body.contentType} onChange={(e) => set({ contentType: e.target.value })} />
         )}
       </div>
+      {body.type === 'none' && <p className="text-sm text-muted-foreground">Nothing is sent in the body. Typical for GET requests.</p>}
       {errors.get(`${path}.variants`) && <p className="text-sm text-destructive">{errors.get(`${path}.variants`)}</p>}
 
       {body.type !== 'none' && v && (
-        <div className="rounded-lg border">
-          <div className="flex flex-wrap items-center gap-1 border-b p-2" role="tablist" aria-label="Body variants">
-            {variants.map((x, i) => (
-              <button
-                key={x.id}
-                type="button"
-                role="tab"
-                aria-selected={i === vi}
-                onClick={() => onSelect(i)}
-                className={cn(
-                  'rounded-md px-2.5 py-1 text-sm transition-colors',
-                  i === vi ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground',
-                  !x.enabled && 'line-through',
-                  hasErrorUnder(errors, `${path}.variants.${i}`) && 'text-destructive',
-                )}
-              >
-                {x.name || 'unnamed'}
-              </button>
-            ))}
-            {!readOnly && variants.length < 20 && (
-              <Button type="button" variant="ghost" size="sm" onClick={() => addVariant()}>
-                <PlusIcon />
-                Variant
-              </Button>
-            )}
-          </div>
-          <div className="grid gap-4 p-4">
-            <div className="flex flex-wrap items-end gap-3">
-              <div className="grid gap-2">
-                <Label htmlFor={`${path}-vname`}>Variant name</Label>
-                <Input id={`${path}-vname`} className="w-48" value={v.name} aria-invalid={errors.get(`${path}.variants.${vi}.name`) ? true : undefined} onChange={(e) => setVariant({ name: e.target.value })} />
+        <div className="grid gap-4">
+          {many && (
+            <div className="grid gap-3 rounded-md bg-muted/40 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium">Variations</span>
+                <div className="flex flex-wrap gap-1" role="tablist" aria-label="Body variations">
+                  {variants.map((x, i) => (
+                    <button
+                      key={x.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={i === vi}
+                      onClick={() => onSelect(i)}
+                      className={cn(
+                        'rounded-md px-2.5 py-1 text-sm',
+                        i === vi ? 'bg-background font-medium shadow-xs' : 'text-muted-foreground hover:text-foreground',
+                        !x.enabled && 'line-through',
+                        hasErrorUnder(errors, `${path}.variants.${i}`) && 'text-destructive',
+                      )}
+                    >
+                      {x.name || 'unnamed'}
+                    </button>
+                  ))}
+                </div>
+                <div className="ml-auto flex items-center gap-2">
+                  <Label htmlFor={`${path}-pick`} className="text-sm font-normal text-muted-foreground">
+                    Send
+                  </Label>
+                  <Select value={body.variantPick} onValueChange={(p) => set({ variantPick: p as Body['variantPick'] })}>
+                    <SelectTrigger id={`${path}-pick`} size="sm" className="w-36">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="roundRobin">in turn</SelectItem>
+                      <SelectItem value="random">at random</SelectItem>
+                      <SelectItem value="weighted">by weight</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              {body.variantPick === 'weighted' && variants.length > 1 && (
-                <div className="grid gap-2">
-                  <Label htmlFor={`${path}-vweight`}>Weight</Label>
-                  <Input id={`${path}-vweight`} type="number" min={0} className="w-24 font-mono" value={v.weight} onChange={(e) => setVariant({ weight: Number(e.target.value) })} />
-                </div>
-              )}
-              {body.type === 'json' && (
-                <div className="grid gap-2">
-                  <span className="text-sm font-medium">Edit as</span>
-                  <div className="flex rounded-md border p-0.5" role="radiogroup" aria-label="Edit as">
-                    {(['fields', 'raw'] as const).map((m) => (
-                      <button
-                        key={m}
-                        type="button"
-                        role="radio"
-                        aria-checked={v.mode === m}
-                        onClick={() => setVariant({ mode: m })}
-                        className={cn('rounded px-2.5 py-1 text-sm', v.mode === m ? 'bg-muted font-medium' : 'text-muted-foreground')}
-                      >
-                        {m === 'fields' ? 'Fields' : 'Raw JSON'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <label className="flex items-center gap-2 pb-1.5 text-sm">
-                <Switch checked={v.enabled} onCheckedChange={(enabled) => setVariant({ enabled })} />
-                Enabled
-              </label>
-              {!readOnly && (
-                <div className="ml-auto flex gap-1">
-                  <Button type="button" variant="ghost" size="icon-sm" aria-label="Duplicate variant" onClick={() => addVariant(v)}>
-                    <CopyIcon />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Delete variant"
-                    disabled={variants.length === 1}
-                    onClick={() => {
-                      set({ variants: variants.filter((_, i) => i !== vi) })
-                      onSelect(Math.max(0, vi - 1))
-                    }}
-                  >
-                    <Trash2Icon />
-                  </Button>
-                </div>
-              )}
-            </div>
-            {v.mode === 'raw' ? (
-              <>
-                <RawEditor key={v.id} label={`Raw body of ${v.name}`} value={v.raw} onChange={(raw) => setVariant({ raw })} isJson={body.type === 'json'} />
-                {errors.get(`${path}.variants.${vi}.raw`) && <p className="text-sm text-destructive">{errors.get(`${path}.variants.${vi}.raw`)}</p>}
-                {body.type === 'json' && (
-                  <p className="text-sm text-muted-foreground">
-                    Type <code className="font-mono">{'{{'}</code> for generators. Wrap text in <code className="font-mono">{'{{q (name)}}'}</code> so quotes stay valid JSON.
-                  </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <Input aria-label="Variation name" className="w-48" value={v.name} aria-invalid={errors.get(`${path}.variants.${vi}.name`) ? true : undefined} onChange={(e) => setVariant({ name: e.target.value })} />
+                {body.variantPick === 'weighted' && (
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    weight
+                    <Input type="number" min={0} className="w-20 font-mono" value={v.weight} onChange={(e) => setVariant({ weight: Number(e.target.value) })} />
+                  </label>
                 )}
-              </>
-            ) : (
-              <FieldsEditor key={v.id} fields={v.fields} onChange={(fields) => setVariant({ fields })} path={`${path}.variants.${vi}.fields`} nested={body.type === 'json'} />
-            )}
-          </div>
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch checked={v.enabled} disabled={readOnly} onCheckedChange={(enabled) => setVariant({ enabled })} />
+                  Used in runs
+                </label>
+                {!readOnly && (
+                  <div className="ml-auto flex gap-1">
+                    <Button type="button" variant="ghost" size="icon-sm" aria-label="Duplicate variation" onClick={() => addVariant(v)}>
+                      <CopyIcon />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Delete variation"
+                      onClick={() => {
+                        set({ variants: variants.filter((_, i) => i !== vi) })
+                        onSelect(Math.max(0, vi - 1))
+                      }}
+                    >
+                      <Trash2Icon />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {v.mode === 'raw' ? (
+            <>
+              <RawEditor key={v.id} label={`Body of ${v.name}`} value={v.raw} onChange={(raw) => setVariant({ raw })} isJson={body.type === 'json'} />
+              {errors.get(`${path}.variants.${vi}.raw`) && <p className="text-sm text-destructive">{errors.get(`${path}.variants.${vi}.raw`)}</p>}
+              <p className="text-sm text-muted-foreground">
+                Type <code className="font-mono">{'{{'}</code> to insert random data.
+                {body.type === 'json' && (
+                  <>
+                    {' '}
+                    Wrap text in <code className="font-mono">{'{{q (name)}}'}</code> so quotes stay valid JSON.
+                  </>
+                )}
+              </p>
+            </>
+          ) : (
+            <FieldsEditor key={v.id} fields={v.fields} onChange={(fields) => setVariant({ fields })} path={`${path}.variants.${vi}.fields`} nested={body.type === 'json'} />
+          )}
+
+          {!readOnly && variants.length < 20 && (
+            <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+              <Button type="button" variant="ghost" size="sm" onClick={() => addVariant(many ? undefined : v)}>
+                <PlusIcon />
+                Add a body variation
+              </Button>
+              {!many && <span className="text-sm text-muted-foreground">Send different bodies to cover more cases, for example small and large orders.</span>}
+            </div>
+          )}
         </div>
       )}
     </div>

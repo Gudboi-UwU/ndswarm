@@ -52,12 +52,12 @@ export function EnvironmentDialog({
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <form onSubmit={submit} className="grid gap-6" noValidate>
           <DialogHeader>
-            <DialogTitle>{env ? `Edit ${env.name}` : 'New environment'}</DialogTitle>
-            <DialogDescription>Where requests go, plus values shared by every test in this project. Secret values are encrypted and never shown again.</DialogDescription>
+            <DialogTitle>{env ? `Edit ${env.name}` : 'New target'}</DialogTitle>
+            <DialogDescription>The server you want to test, plus values shared by its tests. Secret values are encrypted and never shown again.</DialogDescription>
           </DialogHeader>
           {save.error && !err?.details.length && <p className="text-sm text-destructive">{errorMessage(save.error)}</p>}
           <div className="grid gap-5 sm:grid-cols-2">
-            <FormField id="env-name" label="Name" placeholder="staging" value={draft.name} onChange={(e) => set({ name: e.target.value })} error={err?.field('name')} />
+            <FormField id="env-name" label="Name" placeholder="Staging API" value={draft.name} onChange={(e) => set({ name: e.target.value })} error={err?.field('name')} />
             <FormField
               id="env-base"
               label="Base URL"
@@ -121,7 +121,7 @@ export function EnvironmentDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={save.isPending || !draft.name.trim()}>
-              {env ? 'Save' : 'Create environment'}
+              {env ? 'Save' : 'Create target'}
             </Button>
           </DialogFooter>
         </form>
@@ -155,7 +155,7 @@ function PairList({
           <span>{keyLabel}</span>
           <span>Value</span>
           <span>Secret</span>
-          <span className="sr-only">Remove</span>
+          <span aria-hidden="true" />
           {items.map((it, i) => {
             const keyErr = errorAt(i, 'key')
             const valErr = errorAt(i, 'value')

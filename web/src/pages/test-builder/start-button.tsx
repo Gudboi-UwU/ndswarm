@@ -11,12 +11,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 /** Starts a run. The server runs preflight first; problems open a dialog. */
-export function StartButton({ testId, blockedReason }: { testId: number; blockedReason?: string }) {
+export function StartButton({ testId, blockedReason, beforeStart }: { testId: number; blockedReason?: string; beforeStart?: () => Promise<boolean> }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [preflight, setPreflight] = useState<Preflight | null>(null)
   const start = useMutation({
-    mutationFn: (force: boolean) => api<{ id: number }>('POST', `/tests/${testId}/runs`, { force }),
+    mutationFn: async (force: boolean) => {
+      if (beforeStart && !(await beforeStart())) throw new Error('Fix the fields marked in red, then run again.')
+      return api<{ id: number }>('POST', `/tests/${testId}/runs`, { force })
+    },
     onSuccess: async ({ id }) => {
       setPreflight(null)
       await queryClient.invalidateQueries({ queryKey: keys.activeRun })
@@ -37,7 +40,7 @@ export function StartButton({ testId, blockedReason }: { testId: number; blocked
   const button = (
     <Button onClick={() => start.mutate(false)} disabled={!!blockedReason || start.isPending}>
       <PlayIcon />
-      {start.isPending && !preflight ? 'Checking' : 'Start'}
+      {start.isPending && !preflight ? 'Checking' : 'Run test'}
     </Button>
   )
   const blocking = (preflight?.errors.length ?? 0) > 0
@@ -57,9 +60,11 @@ export function StartButton({ testId, blockedReason }: { testId: number; blocked
       <Dialog open={preflight !== null} onOpenChange={(o) => !o && setPreflight(null)}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{blocking ? 'Fix these before starting' : 'Preflight found warnings'}</DialogTitle>
+            <DialogTitle>{blocking ? 'This test cannot run yet' : 'Some requests failed the quick check'}</DialogTitle>
             <DialogDescription>
-              {blocking ? 'Every request would fail the same way, so the run was not started.' : 'Each endpoint was called once. Some answered in a way that counts as an error.'}
+              {blocking
+                ? 'Before every run, ndswarm builds each request once. These problems would make every request fail, so nothing was started.'
+                : 'Before every run, ndswarm sends each request once. The ones below failed. If that is expected (for example a test for errors), run anyway.'}
             </DialogDescription>
           </DialogHeader>
           {preflight && (
@@ -98,11 +103,11 @@ export function StartButton({ testId, blockedReason }: { testId: number; blocked
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setPreflight(null)}>
-              {blocking ? 'Close' : 'Cancel'}
+              Back to the test
             </Button>
             {!blocking && (
               <Button onClick={() => start.mutate(true)} disabled={start.isPending}>
-                Start anyway
+                Run anyway
               </Button>
             )}
           </DialogFooter>

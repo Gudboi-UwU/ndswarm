@@ -27,14 +27,14 @@ import { ExportMenu, SummaryTab } from './run-summary'
 // Latency percentiles are ordinal: one hue, darker = higher percentile (light) / brighter (dark).
 // Validated with the dataviz palette checks against both surfaces.
 const LATENCY: ChartSeries[] = [
-  { label: 'p50', color: ['#10b981', '#047857'] },
-  { label: 'p95', color: ['#047857', '#10b981'] },
-  { label: 'p99', color: ['#022c22', '#6ee7b7'] },
+  { label: 'Half of requests within', color: ['#10b981', '#047857'] },
+  { label: '95% within', color: ['#047857', '#10b981'] },
+  { label: '99% within', color: ['#022c22', '#6ee7b7'] },
 ]
 const RPS: ChartSeries[] = [{ label: 'Requests/s', color: '--primary', fill: true }]
-const ERRORS: ChartSeries[] = [{ label: 'Errors/s', color: '--destructive', fill: true }]
+const ERRORS: ChartSeries[] = [{ label: 'Failed/s', color: '--destructive', fill: true }]
 const NO_POINTS: Point[] = []
-const VUS: ChartSeries[] = [{ label: 'Virtual users', color: '--muted-foreground' }]
+const VUS: ChartSeries[] = [{ label: 'Users', color: '--muted-foreground' }]
 
 export function RunPage() {
   const id = Number(useParams().id)
@@ -150,10 +150,7 @@ function RunView({ run }: { run: Run }) {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{run.testName}</h1>
           <RunStatus run={{ status, verdict: run.verdict }} />
-          <span className="font-mono text-sm text-muted-foreground tabular-nums">
-            {formatElapsed(elapsed)}
-            {live && ` / ${formatElapsed(planned)}`}
-          </span>
+          {!live && <span className="font-mono text-sm text-muted-foreground tabular-nums">{formatElapsed(elapsed)}</span>}
           <div className="ml-auto flex gap-2">
             {live && me?.can.run && (
               <Button variant="outline" disabled={status === 'stopping' || stop.isPending} onClick={() => setStopping(true)}>
@@ -174,14 +171,26 @@ function RunView({ run }: { run: Run }) {
           {run.environment && ` against ${run.environment}`}
           {run.endReason && `. Ended: ${run.endReason}`}
         </p>
+        {live && (
+          <div className="mt-1 grid gap-1" aria-label="Progress">
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-primary transition-[width] duration-1000 ease-linear" style={{ width: `${Math.min(100, (elapsed / Math.max(planned, 1)) * 100)}%` }} />
+            </div>
+            <p className="font-mono text-xs text-muted-foreground tabular-nums">
+              {formatElapsed(elapsed)} of {formatElapsed(planned)}
+            </p>
+          </div>
+        )}
       </header>
+
+      <Headline total={total} live={live} status={status} />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="errors">Errors{total && total.err > 0 ? ` (${formatNumber(total.err)})` : ''}</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
-          <TabsTrigger value="summary">Summary</TabsTrigger>
+          <TabsTrigger value="errors">Failures{total && total.err > 0 ? ` (${formatNumber(total.err)})` : ''}</TabsTrigger>
+          <TabsTrigger value="logs">Request log</TabsTrigger>
+          <TabsTrigger value="summary">Details</TabsTrigger>
         </TabsList>
         <TabsContent value="errors" className="mt-6">
           <ErrorsTab runId={run.id} keys={run.keys} live={live} onShowLogs={(category, key) => showLogs({ category, key: String(key) })} />
@@ -193,36 +202,48 @@ function RunView({ run }: { run: Run }) {
           <SummaryTab runId={run.id} keys={run.keys} live={live} />
         </TabsContent>
         <TabsContent value="overview" className="mt-6 grid gap-8">
-      <section aria-label="Totals" className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-7">
-        <StatCard label="Avg latency" help="Mean time from sending a request until its response body was fully read." value={total ? `${formatNumber(total.avg, 1)} ms` : '-'} sub={recent && `${formatNumber(recent.avg, 1)} ms last 5s`} />
-        <StatCard label="OK" help="Requests with no transport error and a status from 200 to 399." value={total ? formatNumber(total.ok) : '-'} sub={total && total.count > 0 ? `${formatNumber((total.ok / total.count) * 100, 1)}% of requests` : undefined} />
+      <section aria-label="Totals" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
-          label="Errors"
-          help="Timeouts, connection, DNS and TLS failures, HTTP 4xx and 5xx, and template errors."
-          value={total ? formatNumber(total.err) : '-'}
-          sub={total && total.count > 0 ? `${formatNumber((total.err / total.count) * 100, 2)}% error rate` : undefined}
+          label="Requests per second"
+          help="How many requests the server completed each second. Higher is better, as long as responses stay fast and correct."
+          value={total ? formatNumber(live && recent ? recent.rps : total.rps, 0) : '-'}
+          sub={total ? (live ? `average ${formatNumber(total.rps, 0)} since the start` : `${formatNumber(total.count)} requests in total`) : undefined}
+        />
+        <StatCard
+          label="Response time"
+          help="Average time from sending a request until its full response arrived. The second line shows the time 95% of requests stayed under."
+          value={total ? `${formatNumber(total.avg, 1)} ms` : '-'}
+          sub={total ? `95% within ${formatNumber(total.p95, 1)} ms, 99% within ${formatNumber(total.p99, 1)} ms` : undefined}
+        />
+        <StatCard
+          label="Failed requests"
+          help="Timeouts, connection problems, HTTP 4xx and 5xx answers, and requests that could not be built."
+          value={total && total.count > 0 ? `${formatNumber((total.err / total.count) * 100, 2)}%` : '-'}
+          sub={total ? `${formatNumber(total.err)} of ${formatNumber(total.count)}` : undefined}
           alert={!!total && total.err > 0}
         />
-        <StatCard label="Requests/s" help="Completed requests per second, averaged since the start." value={total ? formatNumber(total.rps, 1) : '-'} sub={recent && `${formatNumber(recent.rps, 1)} last 5s`} />
-        <StatCard label="Virtual users" help="Users sending requests right now, and the current stage target." value={tick && live ? formatNumber(tick.vus) : '-'} sub={tick && live ? `target ${tick.targetVus}` : undefined} />
-        <StatCard label="p95" help="95% of requests finished within this time." value={total ? `${formatNumber(total.p95, 1)} ms` : '-'} sub={recent && `${formatNumber(recent.p95, 1)} ms last 5s`} />
-        <StatCard label="p99" help="99% of requests finished within this time." value={total ? `${formatNumber(total.p99, 1)} ms` : '-'} sub={recent && `${formatNumber(recent.p99, 1)} ms last 5s`} />
+        <StatCard
+          label="Simulated users"
+          help="Users sending requests at the same time."
+          value={live && tick ? formatNumber(tick.vus) : formatNumber(Math.max(0, ...points.map((p) => p.vus)))}
+          sub={live && tick ? `heading for ${tick.targetVus}` : 'at the peak'}
+        />
       </section>
 
       <section aria-label="Charts" className="grid gap-8 lg:grid-cols-2">
         <TimeChart title="Requests per second" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.rps} series={RPS} digits={0} xMax={xMax} />
-        <TimeChart title="Latency" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.lat} series={LATENCY} unit=" ms" xMax={xMax} />
-        <TimeChart title="Errors per second" onPick={(x) => showLogs({ from: String(x), to: String(x), category: 'error' })} data={chart.err} series={ERRORS} digits={0} xMax={xMax} />
-        <TimeChart title="Virtual users" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.vus} series={VUS} digits={0} xMax={xMax} height={160} />
+        <TimeChart title="Response time" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.lat} series={LATENCY} unit=" ms" xMax={xMax} />
+        <TimeChart title="Failed requests per second" onPick={(x) => showLogs({ from: String(x), to: String(x), category: 'error' })} data={chart.err} series={ERRORS} digits={0} xMax={xMax} />
+        <TimeChart title="Simulated users" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.vus} series={VUS} digits={0} xMax={xMax} height={160} />
       </section>
 
       <section aria-label="Endpoints" className="grid gap-3">
-        <h2 className="text-lg font-medium">Endpoints</h2>
+        <h2 className="text-lg font-medium">By request</h2>
         <EndpointTable keys={run.keys} stats={keyStats} />
       </section>
 
       <section aria-label="Status codes" className="grid gap-3">
-        <h2 className="text-lg font-medium">Status codes and errors</h2>
+        <h2 className="text-lg font-medium">Responses by status</h2>
         <Codes codes={codes} />
         {total && total.bytesIn > 0 && (
           <p className="text-sm text-muted-foreground">
@@ -256,6 +277,33 @@ function RunView({ run }: { run: Run }) {
   )
 }
 
+/** One sentence that answers "how is it going?" before any number needs reading. */
+function Headline({ total, live, status }: { total?: Stats; live: boolean; status: string }) {
+  if (!total || total.count === 0) {
+    return (
+      <p className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">
+        {live ? 'Starting. The first results appear within a second.' : 'No requests were completed in this run.'}
+      </p>
+    )
+  }
+  const rate = (total.err / total.count) * 100
+  const bad = rate >= 5
+  const title = live
+    ? rate < 1 ? 'Running smoothly' : bad ? 'Many requests are failing' : 'Some requests are failing'
+    : status === 'finished' && rate < 1 ? 'Finished without problems' : rate < 1 ? 'Stopped early, no problems so far' : bad ? 'Many requests failed' : 'Some requests failed'
+  return (
+    <div className={cn('rounded-lg border px-4 py-3', rate >= 1 ? 'border-destructive/40 bg-destructive/5' : 'border-primary/30 bg-primary/5')}>
+      <p className={cn('font-medium', rate >= 1 ? 'text-destructive' : 'text-primary')}>{title}</p>
+      <p className="mt-0.5 text-sm">
+        {live ? 'So far ' : ''}
+        {formatNumber(total.count)} requests, {total.err === 0 ? 'none failed' : `${formatNumber(rate, rate < 1 ? 2 : 1)}% failed`}. Half answered within {formatNumber(total.p50, 1)} ms and 95% within{' '}
+        {formatNumber(total.p95, 1)} ms, at about {formatNumber(total.rps, 0)} requests per second.
+        {rate >= 1 && ' The Failures tab shows what went wrong.'}
+      </p>
+    </div>
+  )
+}
+
 function StatCard({ label, help, value, sub, alert }: { label: string; help: string; value: string; sub?: string; alert?: boolean }) {
   return (
     <div className="rounded-lg border p-3">
@@ -283,13 +331,13 @@ function EndpointTable({ keys: runKeys, stats }: { keys: RunKey[]; stats: { keyI
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Endpoint</TableHead>
-            <TableHead className="text-right">Requests</TableHead>
-            <TableHead className="text-right">Errors</TableHead>
-            <TableHead className="text-right">Avg</TableHead>
-            <TableHead className="text-right">p95</TableHead>
-            <TableHead className="text-right">p99</TableHead>
-            <TableHead className="text-right">Req/s</TableHead>
+            <TableHead>Request</TableHead>
+            <TableHead className="text-right">Sent</TableHead>
+            <TableHead className="text-right">Failed</TableHead>
+            <TableHead className="text-right">Average</TableHead>
+            <TableHead className="text-right">95% within</TableHead>
+            <TableHead className="text-right">99% within</TableHead>
+            <TableHead className="text-right">Per second</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody className="font-mono text-sm tabular-nums">

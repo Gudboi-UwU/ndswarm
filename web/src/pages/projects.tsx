@@ -30,14 +30,14 @@ export function ProjectsPage() {
 
   return (
     <div className="max-w-5xl">
-      <PageHeader title="Projects" description="A project groups the tests and environments of one system." actions={projects.data?.length ? newButton : null} />
+      <PageHeader title="Projects and targets" back={<Link to="/tests" className="hover:text-foreground">Tests</Link>} description="Folders for your tests and the servers (targets) they call." actions={projects.data?.length ? newButton : null} />
       {projects.isPending ? (
         <Skeleton className="h-40 w-full" />
       ) : projects.isError ? (
         <p className="text-sm text-destructive">{errorMessage(projects.error)}</p>
       ) : projects.data.length === 0 ? (
         <EmptyState icon={<FolderIcon />} title="No projects yet" action={newButton}>
-          {canEdit ? 'Create a project, add an environment with your base URL, then build a test.' : 'An editor has not created any projects yet.'}
+          {canEdit ? 'Create a project to keep related tests and targets together.' : 'An editor has not created any projects yet.'}
         </EmptyState>
       ) : (
         <div className="rounded-lg border">

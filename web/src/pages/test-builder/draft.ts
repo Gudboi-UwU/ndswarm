@@ -51,12 +51,13 @@ export function cloneFlow(f: Flow): Flow {
 export interface BuilderCtx {
   errors: Map<string, string>
   environmentId: number | null
+  baseUrl: string
   variables: EnvVar[]
   generators: Generator[]
   readOnly: boolean
 }
 
-export const BuilderContext = createContext<BuilderCtx>({ errors: new Map(), environmentId: null, variables: [], generators: [], readOnly: false })
+export const BuilderContext = createContext<BuilderCtx>({ errors: new Map(), environmentId: null, baseUrl: '', variables: [], generators: [], readOnly: false })
 
 export const useBuilder = () => useContext(BuilderContext)
 
@@ -69,4 +70,13 @@ export function useFieldError(path: string): string | undefined {
 export function hasErrorUnder(errors: Map<string, string>, prefix: string): boolean {
   for (const k of errors.keys()) if (k === prefix || k.startsWith(prefix + '.')) return true
   return false
+}
+
+const bodyNames: Record<string, string> = { none: 'none', json: 'JSON', form: 'form', multipart: 'multipart form', raw: 'text' }
+
+/** One-line description of a body for folded sections: "JSON, 2 variations". */
+export function bodyLabel(b: Step['body']): string {
+  if (b.type === 'none') return 'none'
+  const n = b.variants.filter((v) => v.enabled).length
+  return n > 1 ? `${bodyNames[b.type]}, ${n} variations` : bodyNames[b.type]
 }

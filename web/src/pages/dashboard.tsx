@@ -1,9 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { ActivityIcon, FolderIcon } from 'lucide-react'
+import { ActivityIcon, PlusIcon } from 'lucide-react'
+import { useState } from 'react'
+import { useMe } from '@/api/auth'
+import { NewTestDialog } from '@/components/new-test-dialog'
 import { Link } from 'react-router'
 import { api, errorMessage } from '@/api/client'
 import type { Dashboard, DashboardStat } from '@/api/types'
-import { EmptyState, PageHeader } from '@/components/page'
+import { PageHeader } from '@/components/page'
 import { RunStatus, RunTable } from '@/components/run-table'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -11,6 +14,8 @@ import { formatElapsed, formatNumber } from '@/lib/format'
 
 export function DashboardPage() {
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: () => api<Dashboard>('GET', '/dashboard'), refetchInterval: 3000 })
+  const { data: me } = useMe()
+  const [creating, setCreating] = useState(false)
   if (dash.isPending) return <Skeleton className="h-64 max-w-6xl" />
   if (dash.isError) return <p className="text-sm text-destructive">{errorMessage(dash.error)}</p>
   const d = dash.data
@@ -18,7 +23,9 @@ export function DashboardPage() {
 
   return (
     <div className="grid max-w-6xl gap-8">
-      <PageHeader title="Dashboard" />
+      <PageHeader title="Home" />
+      {d.recent.length === 0 && !d.active && <GettingStarted canEdit={!!me?.can.edit} onNew={() => setCreating(true)} />}
+      {creating && <NewTestDialog open={creating} onOpenChange={setCreating} />}
       {d.active && (
         <Link to={`/runs/${d.active.id}`} className="grid gap-4 rounded-lg border border-primary/40 bg-primary/5 p-5 transition-colors hover:bg-primary/10">
           <div className="flex flex-wrap items-center gap-3">
@@ -30,21 +37,23 @@ export function DashboardPage() {
           </div>
           {live && (
             <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              <Tile label="Requests/s (last 5s)" value={formatNumber(live.recent5s.rps, 1)} />
-              <Tile label="Avg latency" value={`${formatNumber(live.recent5s.avg, 1)} ms`} />
-              <Tile label="Errors" value={formatNumber(live.total.err)} alert={live.total.err > 0} />
-              <Tile label="Virtual users" value={`${live.vus} / ${live.targetVus}`} />
+              <Tile label="Requests per second" value={formatNumber(live.recent5s.rps, 1)} />
+              <Tile label="Average response time" value={`${formatNumber(live.recent5s.avg, 1)} ms`} />
+              <Tile label="Failed requests" value={formatNumber(live.total.err)} alert={live.total.err > 0} />
+              <Tile label="Simulated users" value={`${live.vus} / ${live.targetVus}`} />
             </dl>
           )}
         </Link>
       )}
 
+      {d.recent.length > 0 && (
       <section aria-label="Totals" className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Runs today" value={formatNumber(d.today.runs)} />
         <Stat label="Pass rate, 7 days" value={d.week.finished ? `${formatNumber(d.week.passRate * 100, 0)}%` : '-'} sub={passSub(d.week)} />
         <Stat label="Requests, 7 days" value={formatNumber(d.week.requests)} />
-        <Stat label="Error rate, 7 days" value={d.week.requests ? `${formatNumber((d.week.errors / d.week.requests) * 100, 2)}%` : '-'} />
+        <Stat label="Failed requests, 7 days" value={d.week.requests ? `${formatNumber((d.week.errors / d.week.requests) * 100, 2)}%` : '-'} />
       </section>
+      )}
 
       <section className="grid gap-3">
         <div className="flex items-center justify-between">
@@ -56,22 +65,48 @@ export function DashboardPage() {
           )}
         </div>
         {d.recent.length === 0 ? (
-          <EmptyState
-            icon={<FolderIcon />}
-            title="No runs yet"
-            action={
-              <Button asChild>
-                <Link to="/projects">Open projects</Link>
-              </Button>
-            }
-          >
-            Create a project, add an environment and a test, then press Start. Live results appear here.
-          </EmptyState>
-        ) : (
+          <p className="text-sm text-muted-foreground">Finished runs appear here.</p>        ) : (
           <RunTable runs={d.recent} />
         )}
       </section>
     </div>
+  )
+}
+
+const steps = [
+  { title: 'Describe the requests', body: 'Name the test, enter the server address and the requests to send. Random data such as emails or ids is one click away.' },
+  { title: 'Choose the load', body: 'How many simulated users send those requests at the same time, and for how long.' },
+  { title: 'Run and read the results', body: 'Watch requests per second, response times and failures live, then see what failed and why.' },
+]
+
+function GettingStarted({ canEdit, onNew }: { canEdit: boolean; onNew: () => void }) {
+  return (
+    <section className="grid gap-6 rounded-lg border p-6">
+      <div>
+        <h2 className="text-lg font-medium">Load test an API in three steps</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Find out how many requests your server handles, how fast it answers, and when it starts to fail.</p>
+      </div>
+      <ol className="grid gap-4 md:grid-cols-3">
+        {steps.map((s, i) => (
+          <li key={s.title} className="grid content-start gap-1">
+            <span className="grid size-7 place-items-center rounded-full bg-primary/15 font-mono text-sm font-semibold text-primary">{i + 1}</span>
+            <span className="mt-1 font-medium">{s.title}</span>
+            <span className="text-sm text-muted-foreground">{s.body}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="flex flex-wrap gap-3">
+        {canEdit && (
+          <Button onClick={onNew}>
+            <PlusIcon />
+            Create a test
+          </Button>
+        )}
+        <Button variant="outline" asChild>
+          <Link to="/tests">See existing tests</Link>
+        </Button>
+      </div>
+    </section>
   )
 }
 
