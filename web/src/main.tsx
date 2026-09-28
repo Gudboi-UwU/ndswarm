@@ -1,7 +1,7 @@
 import '@/index.css'
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from 'next-themes'
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 import { meKey } from '@/api/auth'
@@ -11,8 +11,13 @@ import { Toaster } from '@/components/ui/sonner'
 import { DashboardPage } from '@/pages/dashboard'
 import { LoginPage } from '@/pages/login'
 import { NotFoundPage } from '@/pages/not-found'
+import { ProjectPage } from '@/pages/project'
+import { ProjectsPage } from '@/pages/projects'
 import { SettingsPage } from '@/pages/settings'
 import { SetupPage } from '@/pages/setup'
+
+// The builder pulls in CodeMirror; load it only when a test is opened.
+const TestBuilderPage = lazy(() => import('@/pages/test-builder'))
 
 // A 401 anywhere means the session ended: refetch /auth/me so the gate redirects to /login.
 const onError = (err: unknown) => {
@@ -36,6 +41,16 @@ const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <DashboardPage /> },
+          { path: 'projects', element: <ProjectsPage /> },
+          { path: 'projects/:id', element: <ProjectPage /> },
+          {
+            path: 'tests/:id',
+            element: (
+              <Suspense fallback={null}>
+                <TestBuilderPage />
+              </Suspense>
+            ),
+          },
           { path: 'settings', element: <SettingsPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],

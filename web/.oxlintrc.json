@@ -16,5 +16,15 @@
   },
   "ignorePatterns": [
     "src/components/ui/**"
+  ],
+  "overrides": [
+    {
+      "files": [
+        "src/main.tsx"
+      ],
+      "rules": {
+        "react/only-export-components": "off"
+      }
+    }
   ]
 }

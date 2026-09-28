@@ -17,6 +17,8 @@ import (
 	"github.com/Gudboi-UwU/ndswarm/internal/api"
 	"github.com/Gudboi-UwU/ndswarm/internal/auth"
 	"github.com/Gudboi-UwU/ndswarm/internal/config"
+	"github.com/Gudboi-UwU/ndswarm/internal/engine"
+	"github.com/Gudboi-UwU/ndswarm/internal/project"
 	"github.com/Gudboi-UwU/ndswarm/internal/secret"
 	"github.com/Gudboi-UwU/ndswarm/internal/store"
 	"github.com/Gudboi-UwU/ndswarm/web"
@@ -73,7 +75,8 @@ func serve(cfg config.Config) error {
 		return fmt.Errorf("bootstrap: %w", err)
 	}
 
-	server := &api.Server{Auth: authSvc, Store: db, Secrets: box, UI: web.Dist(), Version: version}
+	engine.UserAgent = "ndswarm/" + version
+	server := &api.Server{Auth: authSvc, Projects: project.New(db, box), Store: db, UI: web.Dist(), Version: version}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           server.Handler(),

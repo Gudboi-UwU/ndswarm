@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { GaugeIcon, LogInIcon, LogOutIcon, MoonIcon, SettingsIcon, SunIcon } from 'lucide-react'
+import { FolderIcon, GaugeIcon, LogInIcon, LogOutIcon, MoonIcon, SettingsIcon, SunIcon } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useMe } from '@/api/auth'
@@ -56,6 +56,7 @@ export function RequireAccess() {
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: GaugeIcon, show: () => true },
+  { to: '/projects', label: 'Projects', icon: FolderIcon, show: () => true },
   { to: '/settings', label: 'Settings', icon: SettingsIcon, show: (me: Me) => me.can.admin },
 ]
 
