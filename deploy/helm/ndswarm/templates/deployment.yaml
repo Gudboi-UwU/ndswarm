@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ndswarm.fullname" . }}
+  labels: {{- include "ndswarm.labels" . | nindent 4 }}
+spec:
+  replicas: 1          # SQLite: never more than one writer
+  strategy:
+    type: Recreate     # the old pod releases the volume before the new one starts
+  selector:
+    matchLabels: {{- include "ndswarm.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "ndswarm.selector" . | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      terminationGracePeriodSeconds: 30 # a running test is stopped and its results written within 20 s
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: ndswarm
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8089
+          env:
+            - { name: NDSWARM_DATA_DIR, value: /data }
+            - { name: NDSWARM_GUEST_MODE, value: {{ .Values.config.guestMode | quote }} }
+            - { name: NDSWARM_MAX_VUS, value: {{ .Values.config.maxVUs | quote }} }
+            - { name: NDSWARM_RETENTION_DAYS, value: {{ .Values.config.retentionDays | quote }} }
+            - { name: NDSWARM_TARGET_ALLOWLIST, value: {{ .Values.config.targetAllowlist | quote }} }
+            - { name: NDSWARM_LOG_LEVEL, value: {{ .Values.config.logLevel | quote }} }
+            - { name: NDSWARM_DEMO, value: {{ .Values.config.demo | quote }} }
+          envFrom:
+            - secretRef:
+                name: {{ include "ndswarm.secretName" . }}
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "ndswarm.fullname" .) }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

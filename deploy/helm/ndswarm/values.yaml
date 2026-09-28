@@ -1,0 +1,48 @@
+image:
+  repository: ghcr.io/gudboi-uwu/ndswarm
+  tag: ""            # defaults to the chart appVersion
+  pullPolicy: IfNotPresent
+
+# ndswarm keeps its data in SQLite: exactly one replica, replaced (not rolled) on upgrade.
+persistence:
+  size: 10Gi
+  storageClass: ""   # empty = cluster default
+  existingClaim: ""
+
+# Admin created on first start, and the key that encrypts environment secrets.
+# Leave both empty to use the setup page and an auto-generated key on the volume.
+auth:
+  adminUser: ""
+  adminPassword: ""
+  secretKey: ""      # base64 of 32 bytes: openssl rand -base64 32
+  existingSecret: "" # a Secret with NDSWARM_ADMIN_USER, NDSWARM_ADMIN_PASSWORD, NDSWARM_SECRET_KEY
+
+config:
+  guestMode: "off"   # off | view | run (initial value)
+  maxVUs: 5000
+  retentionDays: 30
+  targetAllowlist: "" # comma separated hosts (initial value)
+  logLevel: info
+  demo: false
+
+service:
+  type: ClusterIP
+  port: 8089
+
+ingress:
+  enabled: false
+  className: ""
+  host: ndswarm.example.com
+  tls: []            # [{secretName: ndswarm-tls, hosts: [ndswarm.example.com]}]
+  annotations:
+    # Live results use a WebSocket; keep it open for long runs (ingress-nginx).
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+resources:
+  requests: { cpu: "2", memory: 1Gi }
+  limits: { cpu: "4", memory: 2Gi }
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -88,6 +88,13 @@ func serve(cfg config.Config) error {
 	if err := db.InitServerSettings(context.Background(), cfg.RetentionDays, cfg.Allowlist); err != nil {
 		return fmt.Errorf("settings: %w", err)
 	}
+	if cfg.Demo {
+		if seeded, err := projects.SeedDemo(context.Background(), cfg.DemoTarget); err != nil {
+			return fmt.Errorf("demo: %w", err)
+		} else if seeded {
+			slog.Info("created demo project", "target", cfg.DemoTarget)
+		}
+	}
 
 	server := &api.Server{Auth: authSvc, Projects: projects, Runner: runs, Hub: hub, Store: db, UI: web.Dist(), Version: version}
 	srv := &http.Server{

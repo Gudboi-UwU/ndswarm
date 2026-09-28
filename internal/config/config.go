@@ -19,6 +19,8 @@ type Config struct {
 	MaxVUs        int
 	RetentionDays int    // initial value; admins change it in Settings
 	Allowlist     string // initial target allowlist, comma separated
+	Demo          bool   // seed a demo project on first start
+	DemoTarget    string // base URL of the dummy target for the demo
 	LogLevel      slog.Level
 }
 
@@ -40,6 +42,8 @@ func Load() (Config, error) {
 		return c, fmt.Errorf("NDSWARM_RETENTION_DAYS must be a positive number of days")
 	}
 	c.Allowlist = get("NDSWARM_TARGET_ALLOWLIST", "")
+	c.Demo, _ = strconv.ParseBool(get("NDSWARM_DEMO", "false"))
+	c.DemoTarget = get("NDSWARM_DEMO_TARGET", "http://dummytarget:8090")
 	if err := c.LogLevel.UnmarshalText([]byte(get("NDSWARM_LOG_LEVEL", "info"))); err != nil {
 		return c, fmt.Errorf("NDSWARM_LOG_LEVEL: %w", err)
 	}

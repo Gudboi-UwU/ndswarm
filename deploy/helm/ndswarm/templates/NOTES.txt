@@ -1,0 +1,12 @@
+ndswarm is starting (one pod, data on the PVC {{ include "ndswarm.fullname" . }}).
+
+{{- if .Values.ingress.enabled }}
+Open https://{{ .Values.ingress.host }}
+{{- else }}
+Open it locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ndswarm.fullname" . }} 8089:{{ .Values.service.port }}
+  then http://localhost:8089
+{{- end }}
+{{- if not .Values.auth.adminUser }}
+No admin was configured: the first visitor creates it on the setup page.
+{{- end }}
