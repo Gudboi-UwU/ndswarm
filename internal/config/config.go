@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +16,7 @@ type Config struct {
 	AdminPassword string
 	SecretKey     string // base64, 32 bytes; empty = auto-generate in DataDir
 	GuestMode     string // initial value only; admins change it in Settings
+	MaxVUs        int
 	LogLevel      slog.Level
 }
 
@@ -27,6 +29,11 @@ func Load() (Config, error) {
 		SecretKey:     get("NDSWARM_SECRET_KEY", ""),
 		GuestMode:     get("NDSWARM_GUEST_MODE", "off"),
 	}
+	maxVUs, err := strconv.Atoi(get("NDSWARM_MAX_VUS", "5000"))
+	if err != nil || maxVUs < 1 {
+		return c, fmt.Errorf("NDSWARM_MAX_VUS must be a positive number")
+	}
+	c.MaxVUs = maxVUs
 	if err := c.LogLevel.UnmarshalText([]byte(get("NDSWARM_LOG_LEVEL", "info"))); err != nil {
 		return c, fmt.Errorf("NDSWARM_LOG_LEVEL: %w", err)
 	}

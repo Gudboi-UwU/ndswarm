@@ -24,13 +24,15 @@ const (
 
 // Test is what the Test Builder edits. Every string value except names and keys is a template.
 type Test struct {
-	ID            int64  `json:"id"`
-	ProjectID     int64  `json:"projectId"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	EnvironmentID *int64 `json:"environmentId"`
-	Flows         []Flow `json:"flows"`
-	UpdatedAt     int64  `json:"updatedAt"`
+	ID            int64    `json:"id"`
+	ProjectID     int64    `json:"projectId"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	EnvironmentID *int64   `json:"environmentId"`
+	Flows         []Flow   `json:"flows"`
+	Load          Load     `json:"load"`
+	Settings      Settings `json:"settings"`
+	UpdatedAt     int64    `json:"updatedAt"`
 }
 
 // Flow runs its steps in order. In the "Endpoints" view each flow has exactly one step.
@@ -109,14 +111,18 @@ func (t *Test) Normalize() {
 	if t.Flows == nil {
 		t.Flows = []Flow{}
 	}
+	t.Load.normalize()
 	for i := range t.Flows {
 		f := &t.Flows[i]
+		f.Steps = nonNil(f.Steps)
 		for j := range f.Steps {
 			s := &f.Steps[j]
 			s.Method = strings.ToUpper(strings.TrimSpace(s.Method))
 			if s.TimeoutMs == 0 {
 				s.TimeoutMs = DefaultTimeout
 			}
+			s.Query, s.Headers = nonNil(s.Query), nonNil(s.Headers)
+			s.Body.Variants = nonNil(s.Body.Variants)
 			if s.Body.Type == "" {
 				s.Body.Type = "none"
 			}
@@ -127,9 +133,26 @@ func (t *Test) Normalize() {
 				if s.Body.Variants[k].Mode == "" {
 					s.Body.Variants[k].Mode = "fields"
 				}
+				s.Body.Variants[k].Fields = normalizeFields(s.Body.Variants[k].Fields)
 			}
 		}
 	}
+}
+
+// nonNil makes JSON show [] instead of null, which the UI relies on.
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
+
+func normalizeFields(fs []Field) []Field {
+	fs = nonNil(fs)
+	for i := range fs {
+		fs[i].Children = normalizeFields(fs[i].Children)
+	}
+	return fs
 }
 
 // Validate reports every problem with a JSON path so the builder can mark each input.
@@ -137,6 +160,8 @@ func (t *Test) Validate() error {
 	var v ValidationError
 	checkName(&v, "name", t.Name)
 	v.Check(len(t.Flows) <= MaxFlows, "flows", fmt.Sprintf("At most %d endpoints per test.", MaxFlows))
+	t.Load.validate(&v)
+	t.Settings.validate(&v)
 	flowIDs := map[string]bool{}
 	for i, f := range t.Flows {
 		p := fmt.Sprintf("flows.%d", i)

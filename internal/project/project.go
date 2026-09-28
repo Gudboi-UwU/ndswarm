@@ -236,14 +236,20 @@ func (s *Service) GetTest(ctx context.Context, id int64) (model.Test, error) {
 	if err := json.Unmarshal([]byte(blob), &cfg); err != nil {
 		return t, fmt.Errorf("test %d: %w", id, err)
 	}
-	t.Flows = cfg.Flows
+	t.Flows, t.Load = cfg.Flows, cfg.Load
+	t.Settings = model.DefaultSettings
+	if cfg.Settings != nil {
+		t.Settings = *cfg.Settings
+	}
 	t.Normalize()
 	return t, nil
 }
 
 // testConfig is what config_json holds; columns carry the rest.
 type testConfig struct {
-	Flows []model.Flow `json:"flows"`
+	Flows    []model.Flow    `json:"flows"`
+	Load     model.Load      `json:"load"`
+	Settings *model.Settings `json:"settings"` // nil in tests saved before settings existed
 }
 
 func (s *Service) CreateTest(ctx context.Context, t model.Test) (model.Test, error) {
@@ -276,7 +282,7 @@ func (s *Service) saveTest(ctx context.Context, t model.Test) (model.Test, error
 			return t, model.ValidationError{{Path: "environmentId", Message: "Choose an environment of this project."}}
 		}
 	}
-	blob, err := json.Marshal(testConfig{Flows: t.Flows})
+	blob, err := json.Marshal(testConfig{Flows: t.Flows, Load: t.Load, Settings: &t.Settings})
 	if err != nil {
 		return t, err
 	}

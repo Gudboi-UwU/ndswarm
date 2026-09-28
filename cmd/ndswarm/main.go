@@ -18,7 +18,9 @@ import (
 	"github.com/Gudboi-UwU/ndswarm/internal/auth"
 	"github.com/Gudboi-UwU/ndswarm/internal/config"
 	"github.com/Gudboi-UwU/ndswarm/internal/engine"
+	"github.com/Gudboi-UwU/ndswarm/internal/model"
 	"github.com/Gudboi-UwU/ndswarm/internal/project"
+	"github.com/Gudboi-UwU/ndswarm/internal/runner"
 	"github.com/Gudboi-UwU/ndswarm/internal/secret"
 	"github.com/Gudboi-UwU/ndswarm/internal/store"
 	"github.com/Gudboi-UwU/ndswarm/web"
@@ -76,7 +78,15 @@ func serve(cfg config.Config) error {
 	}
 
 	engine.UserAgent = "ndswarm/" + version
-	server := &api.Server{Auth: authSvc, Projects: project.New(db, box), Store: db, UI: web.Dist(), Version: version}
+	model.MaxVUsLimit = cfg.MaxVUs
+	projects := project.New(db, box)
+	hub := api.NewHub()
+	runs := runner.New(db, projects, hub)
+	if err := runs.Recover(context.Background()); err != nil {
+		return fmt.Errorf("recover runs: %w", err)
+	}
+
+	server := &api.Server{Auth: authSvc, Projects: projects, Runner: runs, Hub: hub, Store: db, UI: web.Dist(), Version: version}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           server.Handler(),
@@ -94,9 +104,12 @@ func serve(cfg config.Config) error {
 		return err
 	case <-ctx.Done():
 	}
+	// Stop the run first so its last second and summary are written, then close connections.
 	slog.Info("shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	runs.Shutdown(shutdownCtx)
+	hub.CloseAll()
 	if err := srv.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

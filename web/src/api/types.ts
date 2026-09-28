@@ -132,6 +132,8 @@ export interface Test {
   description: string
   environmentId: number | null
   flows: Flow[]
+  load: Load
+  settings: HttpSettings
   updatedAt: number
 }
 
@@ -164,4 +166,119 @@ export interface TryResult {
   response?: { status: number; statusText: string; headers: Record<string, string[]>; body: string; size: number; truncated: boolean }
   timing?: Timing
   error: { category: string; message: string } | null
+}
+
+// ---- runs (mirrors internal/runner and internal/metrics)
+
+export interface Stage {
+  durationSec: number
+  target: number
+}
+
+export interface Load {
+  model: 'closed'
+  stages: Stage[]
+  gracefulStopSec: number
+  maxVUs: number
+}
+
+export interface HttpSettings {
+  keepAlive: boolean
+  http2: boolean
+  insecureTLS: boolean
+  userAgent: string
+}
+
+export interface Stats {
+  count: number
+  ok: number
+  err: number
+  avg: number
+  min: number
+  max: number
+  p50: number
+  p90: number
+  p95: number
+  p99: number
+  rps: number
+  bytesIn: number
+  bytesOut: number
+}
+
+export interface KeyStats {
+  keyId: number
+  total: Stats
+  second: Stats
+}
+
+export interface RunKey {
+  keyId: number
+  flow: string
+  step: string
+  variant: string
+  method: string
+  url: string
+}
+
+export type RunStatus = 'running' | 'stopping' | 'finished' | 'failed' | 'aborted'
+
+export interface Tick {
+  type: 'run.tick'
+  runId: number
+  elapsedSec: number
+  status: RunStatus
+  vus: number
+  targetVus: number
+  total: Stats
+  recent5s: Stats
+  second: Stats
+  keys: KeyStats[]
+  codes: Record<string, number>
+}
+
+export interface Run {
+  id: number
+  testId: number | null
+  projectId: number | null
+  testName: string
+  environment: string
+  status: RunStatus
+  verdict: 'pass' | 'fail' | null
+  startedAt: number
+  endedAt: number | null
+  endReason: string
+  createdBy: string
+  load: Load
+  keys: RunKey[]
+  summary: { elapsedSec: number; total: Stats; keys: KeyStats[]; codes: Record<string, number> } | null
+  live?: Tick
+}
+
+export interface Point {
+  t: number
+  count: number
+  ok: number
+  err: number
+  avg: number
+  p50: number
+  p95: number
+  p99: number
+  vus: number
+  bytesIn: number
+}
+
+export interface PreflightCheck {
+  name: string
+  method: string
+  url: string
+  status: number
+  latencyMs: number
+  error?: string
+  snippet?: string
+}
+
+export interface Preflight {
+  errors: string[]
+  warnings: string[]
+  checks: PreflightCheck[]
 }

@@ -4,12 +4,15 @@ export class ApiError extends Error {
   status: number
   code: string
   details: FieldError[]
+  /** The whole error response, for endpoints that add fields (runId, preflight). */
+  body: Record<string, unknown>
 
-  constructor(status: number, code: string, message: string, details: FieldError[] = []) {
+  constructor(status: number, code: string, message: string, details: FieldError[] = [], body: Record<string, unknown> = {}) {
     super(message)
     this.status = status
     this.code = code
     this.details = details
+    this.body = body
   }
 
   /** Message for one input, from the server's details[].path. */
@@ -37,7 +40,7 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
   const data = await res.json().catch(() => null)
   if (!res.ok) {
     const e = data?.error
-    throw new ApiError(res.status, e?.code ?? 'http', e?.message ?? `Request failed (${res.status})`, e?.details)
+    throw new ApiError(res.status, e?.code ?? 'http', e?.message ?? `Request failed (${res.status})`, e?.details, data ?? {})
   }
   return data as T
 }

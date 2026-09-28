@@ -13,6 +13,7 @@ import (
 
 	"github.com/Gudboi-UwU/ndswarm/internal/auth"
 	"github.com/Gudboi-UwU/ndswarm/internal/project"
+	"github.com/Gudboi-UwU/ndswarm/internal/runner"
 	"github.com/Gudboi-UwU/ndswarm/internal/secret"
 	"github.com/Gudboi-UwU/ndswarm/internal/store"
 )
@@ -24,7 +25,9 @@ func newTestServer(t *testing.T, ui fstest.MapFS) *httptest.Server {
 		t.Fatal(err)
 	}
 	box, _ := secret.New(make([]byte, 32))
-	s := &Server{Auth: auth.New(db), Projects: project.New(db, box), Store: db, UI: ui, Version: "test"}
+	projects := project.New(db, box)
+	hub := NewHub()
+	s := &Server{Auth: auth.New(db), Projects: projects, Runner: runner.New(db, projects, hub), Hub: hub, Store: db, UI: ui, Version: "test"}
 	srv := httptest.NewServer(s.Handler())
 	t.Cleanup(func() { srv.Close(); db.Close() })
 	return srv

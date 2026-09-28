@@ -18,12 +18,15 @@ import (
 	"github.com/Gudboi-UwU/ndswarm/internal/auth"
 	"github.com/Gudboi-UwU/ndswarm/internal/model"
 	"github.com/Gudboi-UwU/ndswarm/internal/project"
+	"github.com/Gudboi-UwU/ndswarm/internal/runner"
 	"github.com/Gudboi-UwU/ndswarm/internal/store"
 )
 
 type Server struct {
 	Auth     *auth.Service
 	Projects *project.Service
+	Runner   *runner.Runner
+	Hub      *Hub
 	Store    *store.Store
 	UI       fs.FS // built SPA: index.html + assets/
 	Version  string
@@ -54,6 +57,7 @@ func (s *Server) Handler() http.Handler {
 
 		r.With(require(auth.PermView)).Get("/system", s.system)
 		s.projectRoutes(r)
+		s.runRoutes(r)
 
 		r.Group(func(r chi.Router) {
 			r.Use(require(auth.PermAdmin))
@@ -153,9 +157,9 @@ func fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusTooManyRequests, "rate_limited", msg, nil)
 	case errors.Is(err, auth.ErrUsernameTaken):
 		writeError(w, http.StatusConflict, "conflict", msg, model.ValidationError{{Path: "username", Message: msg}})
-	case errors.Is(err, auth.ErrNotFound), errors.Is(err, project.ErrNotFound):
+	case errors.Is(err, auth.ErrNotFound), errors.Is(err, project.ErrNotFound), errors.Is(err, runner.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", msg, nil)
-	case errors.Is(err, auth.ErrSetupDone), errors.Is(err, auth.ErrLastAdmin), errors.Is(err, auth.ErrSelfDelete):
+	case errors.Is(err, auth.ErrSetupDone), errors.Is(err, auth.ErrLastAdmin), errors.Is(err, auth.ErrSelfDelete), errors.Is(err, runner.ErrNotActive):
 		writeError(w, http.StatusConflict, "conflict", msg, nil)
 	default:
 		slog.Error("request failed", "method", r.Method, "path", r.URL.Path, "err", err)

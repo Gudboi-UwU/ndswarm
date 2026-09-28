@@ -141,7 +141,7 @@ func (s *Server) getTest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createTest(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
-	var in model.Test
+	in := model.Test{Settings: model.DefaultSettings} // fields the client omits keep their defaults
 	if ok && readJSON(w, r, &in) {
 		in.ProjectID = id
 		respond(w, r, http.StatusCreated)(s.Projects.CreateTest(r.Context(), in))

@@ -1,9 +1,10 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { FolderIcon, GaugeIcon, LogInIcon, LogOutIcon, MoonIcon, SettingsIcon, SunIcon } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ActivityIcon, FolderIcon, GaugeIcon, LogInIcon, LogOutIcon, MoonIcon, SettingsIcon, SunIcon } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { useMe } from '@/api/auth'
 import { api, errorMessage } from '@/api/client'
+import { keys } from '@/api/keys'
 import type { Me } from '@/api/types'
 import { Brand, FullPage } from '@/components/full-page'
 import { Button } from '@/components/ui/button'
@@ -89,12 +90,29 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
+        <ActiveRunLink />
         <AccountMenu me={me} />
       </aside>
       <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">
         <Outlet />
       </main>
     </div>
+  )
+}
+
+/** Shows the running test from anywhere, since only one can run at a time. */
+function ActiveRunLink() {
+  const active = useQuery({ queryKey: keys.activeRun, queryFn: () => api<{ id: number | null }>('GET', '/runs/active'), refetchInterval: 5000 })
+  const id = active.data?.id
+  if (!id) return null
+  return (
+    <NavLink
+      to={`/runs/${id}`}
+      className="flex items-center gap-2 rounded-md bg-primary/10 px-2 py-1.5 text-sm font-medium text-primary hover:bg-primary/15 md:mb-2"
+    >
+      <ActivityIcon className="size-4" />
+      <span className="hidden sm:inline">Run #{id} in progress</span>
+    </NavLink>
   )
 }
 

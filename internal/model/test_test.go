@@ -57,3 +57,17 @@ func TestValidateFields(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeNoNulls(t *testing.T) {
+	tt := Test{Flows: []Flow{{Steps: []Step{{Body: Body{Variants: []Variant{{Fields: []Field{{Type: "object"}}}}}}}}}}
+	tt.Normalize()
+	s := tt.Flows[0].Steps[0]
+	if s.Query == nil || s.Headers == nil || s.Body.Variants[0].Fields[0].Children == nil {
+		t.Errorf("nil slices left: %+v", s)
+	}
+	empty := Test{Flows: []Flow{{}}}
+	empty.Normalize()
+	if empty.Flows[0].Steps == nil {
+		t.Error("nil steps left")
+	}
+}

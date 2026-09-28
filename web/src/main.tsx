@@ -13,6 +13,8 @@ import { LoginPage } from '@/pages/login'
 import { NotFoundPage } from '@/pages/not-found'
 import { ProjectPage } from '@/pages/project'
 import { ProjectsPage } from '@/pages/projects'
+import { RunPage } from '@/pages/run'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { SettingsPage } from '@/pages/settings'
 import { SetupPage } from '@/pages/setup'
 
@@ -51,6 +53,7 @@ const router = createBrowserRouter([
               </Suspense>
             ),
           },
+          { path: 'runs/:id', element: <RunPage /> },
           { path: 'settings', element: <SettingsPage /> },
           { path: '*', element: <NotFoundPage /> },
         ],
@@ -63,7 +66,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <TooltipProvider delayDuration={200}>
+          <RouterProvider router={router} />
+        </TooltipProvider>
         <Toaster position="bottom-right" />
       </QueryClientProvider>
     </ThemeProvider>

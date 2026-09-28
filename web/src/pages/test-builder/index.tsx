@@ -13,9 +13,12 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { NotFoundPage } from '../not-found'
 import { BuilderContext, cloneFlow, hasErrorUnder, newEndpoint } from './draft'
+import { LoadEditor, SettingsEditor } from './load-editor'
+import { StartButton } from './start-button'
 import { EndpointEditor } from './step-editor'
 
 const noErrors = new Map<string, string>()
@@ -51,6 +54,7 @@ function Builder({ saved }: { saved: Test }) {
   const [selected, setSelected] = useState(0)
   const [errors, setErrors] = useState<Map<string, string>>(new Map())
   const [deleting, setDeleting] = useState<number | null>(null)
+  const [tab, setTab] = useState('endpoints')
   const dirty = JSON.stringify(draft) !== baseline
   // The saved version was valid, so errors only matter while there are changes.
   const shownErrors = dirty ? errors : noErrors
@@ -75,6 +79,8 @@ function Builder({ saved }: { saved: Test }) {
         setErrors(new Map(e.details.map((d) => [d.path, d.message])))
         const first = e.details.map((d) => /^flows\.(\d+)/.exec(d.path)).find(Boolean)
         if (first) setSelected(Number(first[1]))
+        const area = e.details[0].path.split('.')[0]
+        setTab(area === 'load' ? 'load' : area === 'settings' ? 'settings' : 'endpoints')
         toast.error(`Not saved: ${e.details.length} field(s) need attention.`)
       } else {
         toast.error(errorMessage(e))
@@ -159,14 +165,17 @@ function Builder({ saved }: { saved: Test }) {
             </Select>
             <div className="ml-auto flex items-center gap-3">
               {readOnly ? (
-                <span className="text-sm text-muted-foreground">Read only</span>
+                !me?.can.run && <span className="text-sm text-muted-foreground">Read only</span>
               ) : (
                 <>
                   {dirty && <span className="text-sm text-muted-foreground">Unsaved changes</span>}
-                  <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
+                  <Button variant={dirty ? 'default' : 'outline'} onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
                     {save.isPending ? 'Saving' : 'Save'}
                   </Button>
                 </>
+              )}
+              {me?.can.run && (
+                <StartButton testId={saved.id} blockedReason={dirty ? 'Save your changes first.' : flows.length === 0 ? 'Add an endpoint first.' : undefined} />
               )}
             </div>
           </div>
@@ -174,6 +183,31 @@ function Builder({ saved }: { saved: Test }) {
           {env && !env.baseUrl && <p className="text-sm text-muted-foreground">{env.name} has no base URL, so endpoints need full URLs.</p>}
         </header>
 
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList>
+            <TabsTrigger value="endpoints" className={cn(hasErrorUnder(shownErrors, 'flows') && 'text-destructive')}>
+              Endpoints
+            </TabsTrigger>
+            <TabsTrigger value="load" className={cn(hasErrorUnder(shownErrors, 'load') && 'text-destructive')}>
+              Load
+            </TabsTrigger>
+            <TabsTrigger value="settings" className={cn(hasErrorUnder(shownErrors, 'settings') && 'text-destructive')}>
+              Settings
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="load" className="mt-6">
+            <fieldset disabled={readOnly} className="min-w-0 max-w-3xl">
+              <legend className="sr-only">Load</legend>
+              <LoadEditor load={draft.load} onChange={(load) => setDraft((d) => ({ ...d, load }))} />
+            </fieldset>
+          </TabsContent>
+          <TabsContent value="settings" className="mt-6">
+            <fieldset disabled={readOnly} className="min-w-0">
+              <legend className="sr-only">HTTP settings</legend>
+              <SettingsEditor settings={draft.settings} onChange={(settings) => setDraft((d) => ({ ...d, settings }))} />
+            </fieldset>
+          </TabsContent>
+          <TabsContent value="endpoints" className="mt-6">
         {flows.length === 0 ? (
           <EmptyState
             icon={<RouteIcon />}
@@ -255,6 +289,8 @@ function Builder({ saved }: { saved: Test }) {
             </fieldset>
           </div>
         )}
+          </TabsContent>
+        </Tabs>
       </div>
 
       <ConfirmDelete
