@@ -68,6 +68,12 @@ export function EndpointEditor({
             {send.isPending ? 'Sending' : 'Send test request'}
           </Button>
         </div>
+        {!urlErr && full && isLocalhost(full) && (
+          <p className="text-xs text-muted-foreground">
+            ndswarm usually runs in Docker, where localhost means the ndswarm container itself. For an API on this computer use{' '}
+            <code className="font-mono">host.docker.internal</code> instead of localhost.
+          </p>
+        )}
         {!urlErr && (
           <p className="truncate font-mono text-xs text-muted-foreground" title={full ?? undefined}>
             {full ?? 'This is a path, but the test has no server address. Choose a server at the top, or enter a full URL.'}
@@ -145,6 +151,14 @@ export function EndpointEditor({
       </div>
     </div>
   )
+}
+
+function isLocalhost(u: string): boolean {
+  try {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(u).hostname)
+  } catch {
+    return false
+  }
 }
 
 /** The address a path resolves to, for a quick sanity check. */

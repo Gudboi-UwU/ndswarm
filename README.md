@@ -12,6 +12,10 @@ docker compose -f deploy/docker-compose.yml up -d
 open http://localhost:8089   # create the admin account, then open the "Demo shop" project
 ```
 
+Tests can call any API the machine can reach: public URLs, your network, or services on the
+same computer. Inside Docker, `localhost` is the ndswarm container itself, so use
+`http://host.docker.internal:<port>` for an API running on the host (the compose file maps it).
+
 The compose file also starts a small dummy target, and seeds a demo test against it, so you
 can press **Start** right away. To test your own service, add an environment with its base URL
 in a project.

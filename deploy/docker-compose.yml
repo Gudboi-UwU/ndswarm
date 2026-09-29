@@ -15,6 +15,10 @@ services:
       NDSWARM_DEMO_TARGET: http://dummytarget:8090
     volumes:
       - ndswarm-data:/data
+    # Lets tests reach APIs running on this computer as http://host.docker.internal:<port>
+    # (Docker Desktop has it built in; plain Docker Engine on Linux needs this line).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ulimits:
       nofile: { soft: 65536, hard: 65536 }
     cpus: 4 # the benchmark (make bench) assumes these limits

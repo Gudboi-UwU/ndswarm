@@ -140,7 +140,11 @@ export function NewTestDialog({ open, onOpenChange, projectId }: { open: boolean
               />
             )}
             <p className={urlError || err?.field('baseUrl') ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
-              {urlError ?? err?.field('baseUrl') ?? 'The address every request in this test starts with.'}
+              {urlError ??
+                err?.field('baseUrl') ??
+                (/\/\/(localhost|127\.0\.0\.1)\b/.test(url)
+                  ? 'In Docker, localhost is the ndswarm container. For an API on this computer use http://host.docker.internal:<port>.'
+                  : 'The address every request in this test starts with.')}
             </p>
           </div>
 
