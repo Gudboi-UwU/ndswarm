@@ -46,6 +46,10 @@ docker run -d -p 8089:8089 -v ndswarm-data:/data --ulimit nofile=65536:65536 nds
   can be static or generated: `{{uuid}}`, `{{int 1 100}}`, `{{email}}`, `{{date ...}}`,
   `{{var "token"}}` and more, picked from a menu with a live preview. **Try** sends one real
   request and shows the response with a timing waterfall.
+- **Import and export.** Download a test or a whole project as an ndswarm file (JSON or YAML)
+  or a Postman collection, and import either back. Postman collections (v2.0 and v2.1, with an
+  optional environment file) become a project: one test per top-level folder, variables and
+  `{{$randomEmail}}`-style values mapped to generators. Secret values are never exported.
 - **Environments.** Base URL, variables, default headers and auth per target. Secrets are
   encrypted at rest (AES-GCM) and never sent back to the browser.
 - **Load.** Virtual users ramp between stages (presets: smoke, load, stress, spike, soak).

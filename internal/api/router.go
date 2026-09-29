@@ -59,6 +59,7 @@ func (s *Server) Handler() http.Handler {
 		s.projectRoutes(r)
 		s.runRoutes(r)
 		s.insightRoutes(r)
+		s.transferRoutes(r)
 
 		r.Group(func(r chi.Router) {
 			r.Use(require(auth.PermAdmin))

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { CopyIcon, EllipsisIcon, FlaskConicalIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from 'lucide-react'
+import { CopyIcon, EllipsisIcon, FileUpIcon, FlaskConicalIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -8,6 +8,8 @@ import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
 import type { Environment, Project, Test, TestSummary } from '@/api/types'
 import { EnvironmentDialog } from '@/components/environment-dialog'
+import { ExportMenu } from '@/components/export-menu'
+import { ImportDialog } from '@/components/import-dialog'
 import { RunsView } from '@/components/run-table'
 import { NewTestDialog } from '@/components/new-test-dialog'
 import { ConfirmDelete, EmptyState, PageHeader } from '@/components/page'
@@ -31,6 +33,7 @@ export function ProjectPage() {
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [importing, setImporting] = useState(false)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const remove = useMutation({
@@ -55,21 +58,28 @@ export function ProjectPage() {
         title={p.name}
         description={p.description || undefined}
         actions={
-          canEdit && (
-            <>
-              <Button variant="ghost" onClick={() => setEditing(true)}>
-                <PencilIcon />
-                Rename
-              </Button>
-              <Button variant="ghost" aria-label="Delete project" onClick={() => setDeleting(true)}>
-                <Trash2Icon />
-              </Button>
-              <Button onClick={() => setCreating(true)}>
-                <PlusIcon />
-                New test
-              </Button>
-            </>
-          )
+          <>
+            <ExportMenu path={`/projects/${id}`} />
+            {canEdit && (
+              <>
+                <Button variant="ghost" onClick={() => setImporting(true)}>
+                  <FileUpIcon />
+                  Import
+                </Button>
+                <Button variant="ghost" onClick={() => setEditing(true)}>
+                  <PencilIcon />
+                  Rename
+                </Button>
+                <Button variant="ghost" aria-label="Delete project" onClick={() => setDeleting(true)}>
+                  <Trash2Icon />
+                </Button>
+                <Button onClick={() => setCreating(true)}>
+                  <PlusIcon />
+                  New test
+                </Button>
+              </>
+            )}
+          </>
         }
       />
       <Tabs value={tab} onValueChange={(t) => setParams(t === 'tests' ? {} : { tab: t }, { replace: true })}>
@@ -91,6 +101,7 @@ export function ProjectPage() {
 
       <ProjectDialog key={`${p.id}-${editing}`} open={editing} onOpenChange={setEditing} project={p} />
       {creating && <NewTestDialog open={creating} onOpenChange={setCreating} projectId={id} />}
+      {importing && <ImportDialog open={importing} onOpenChange={setImporting} projectId={id} />}
       <ConfirmDelete
         target={deleting ? p : null}
         title={`Delete ${p.name}?`}

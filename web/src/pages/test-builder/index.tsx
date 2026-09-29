@@ -7,6 +7,7 @@ import { useMe } from '@/api/auth'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
 import type { Environment, Flow, Generator, Project, Test } from '@/api/types'
+import { ExportMenu } from '@/components/export-menu'
 import { ConfirmDelete, EmptyState } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -170,10 +171,11 @@ function Builder({ saved }: { saved: Test }) {
               </SelectContent>
             </Select>
             </label>
-            <div className="ml-auto flex items-center gap-3">
+            <div className="ml-auto flex flex-wrap items-center gap-3">
               <Button variant="ghost" size="sm" asChild>
                 <Link to={`/runs?testId=${saved.id}`}>Past runs</Link>
               </Button>
+              <ExportMenu path={`/tests/${saved.id}`} note={dirty ? 'Unsaved changes are not included.' : undefined} />
               {readOnly ? (
                 !me?.can.run && <span className="text-sm text-muted-foreground">Read only</span>
               ) : (

@@ -371,3 +371,18 @@ export interface Dashboard {
   week: DashboardStat
   recent: Run[]
 }
+
+/** POST /import/preview: what a file would create. Nothing is saved yet. */
+export interface ImportPreview {
+  format: 'ndswarm' | 'postman'
+  project: { name: string; description: string }
+  servers: { name: string; baseUrl: string; variables: number }[]
+  tests: { name: string; server: string; requests: { method: string; name: string; url: string }[] }[]
+  warnings: string[]
+}
+
+export interface ImportResult {
+  projectId: number
+  tests: { id: number; name: string }[]
+  warnings: string[]
+}

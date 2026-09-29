@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderIcon, FolderPlusIcon, PlusIcon } from 'lucide-react'
+import { FileUpIcon, FolderIcon, FolderPlusIcon, PlusIcon } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -8,6 +8,7 @@ import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
 import type { Project } from '@/api/types'
 import { FormField } from '@/components/form-field'
+import { ImportDialog } from '@/components/import-dialog'
 import { NewTestDialog } from '@/components/new-test-dialog'
 import { EmptyState, PageHeader } from '@/components/page'
 import { Button } from '@/components/ui/button'
@@ -21,9 +22,14 @@ export function ProjectsPage() {
   const projects = useQuery({ queryKey: keys.projects, queryFn: () => api<Project[]>('GET', '/projects') })
   const [creating, setCreating] = useState(false)
   const [newTest, setNewTest] = useState(false)
+  const [importing, setImporting] = useState(false)
   const canEdit = !!me?.can.edit
   const actions = canEdit && (
     <>
+      <Button variant="ghost" onClick={() => setImporting(true)}>
+        <FileUpIcon />
+        Import
+      </Button>
       <Button variant="outline" onClick={() => setCreating(true)}>
         <FolderPlusIcon />
         New project
@@ -45,7 +51,7 @@ export function ProjectsPage() {
       ) : projects.data.length === 0 ? (
         <EmptyState icon={<FolderIcon />} title="No projects yet" action={canEdit && <div className="flex flex-wrap gap-2">{actions}</div>}>
           {canEdit
-            ? 'Start with New test: it asks for the server address and creates a project for you. Or create an empty project first.'
+            ? 'Start with New test: it asks for the server address and creates a project for you. Or create an empty project first, or import tests from a file or a Postman collection.'
             : 'An editor has not created any projects yet.'}
         </EmptyState>
       ) : (
@@ -68,6 +74,7 @@ export function ProjectsPage() {
       )}
       <ProjectDialog open={creating} onOpenChange={setCreating} />
       {newTest && <NewTestDialog open={newTest} onOpenChange={setNewTest} />}
+      {importing && <ImportDialog open={importing} onOpenChange={setImporting} />}
     </div>
   )
 }
