@@ -65,7 +65,15 @@ func TestImportExport(t *testing.T) {
 	admin.expect("PUT", fmt.Sprintf("/environments/%d", eid), `{"name":"Shop API","baseUrl":"https://shop.example.com/api",
 		"variables":[{"key":"token","value":"hunter22-secret","secret":true}],"headers":[{"key":"X-Key","value":"hdr-secret","secret":true}],
 		"auth":{"type":"bearer","token":"tok-secret"}}`, 200)
-	tid := int(tests[0]["id"].(float64))
+	tid := 0 // the Orders test: pick by name, list order is not part of this test
+	for _, tt := range tests {
+		if strings.HasPrefix(tt["name"].(string), "Orders") {
+			tid = int(tt["id"].(float64))
+		}
+	}
+	if tid == 0 {
+		t.Fatalf("no Orders test in %v", tests)
+	}
 	for _, c := range []struct{ path, file string }{
 		{fmt.Sprintf("/tests/%d/export", tid), ".ndswarm.json"},
 		{fmt.Sprintf("/tests/%d/export?format=ndswarm&type=yaml", tid), ".ndswarm.yaml"},

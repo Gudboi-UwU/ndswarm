@@ -228,7 +228,7 @@ func (s *Service) listTests(ctx context.Context, projectID int64) ([]TestSummary
 			(SELECT max(started_at) FROM runs WHERE test_id = t.id)
 		FROM tests t JOIN projects p ON p.id = t.project_id LEFT JOIN environments e ON e.id = t.environment_id
 		WHERE ? = 0 OR t.project_id = ?
-		ORDER BY t.updated_at DESC`, projectID, projectID)
+		ORDER BY t.updated_at DESC, t.id DESC`, projectID, projectID)
 	if err != nil {
 		return nil, err
 	}
