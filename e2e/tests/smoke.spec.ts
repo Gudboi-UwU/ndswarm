@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { expect, test } from '@playwright/test'
 
 // The first-run path a new user takes with `docker compose up`: create the admin, open the
@@ -56,4 +57,71 @@ test('setup, run the demo, read results', async ({ page }) => {
   expect(file.suggestedFilename()).toBe(`run-${runId}-summary.csv`)
   const csv = await (await file.createReadStream()).toArray()
   expect(Buffer.concat(csv).toString()).toContain('endpoint,requests,ok,errors')
+})
+
+// counts leaf (non-folder) items in a Postman collection, recursively.
+function countRequests(items: { item?: unknown[]; request?: unknown }[]): number {
+  return items.reduce((n, it) => n + (it.request ? 1 : countRequests((it.item as typeof items) ?? [])), 0)
+}
+
+// Import a Postman collection into a new project, check what landed, export it back out as a
+// Postman collection, and confirm re-importing that export finds the same requests.
+test('import a Postman collection and export it back out', async ({ page }) => {
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/login$/)
+  await page.getByLabel('Username').fill('admin')
+  await page.getByLabel('Password').fill('e2e-password')
+  await page.getByRole('button', { name: 'Log in' }).click()
+  await expect(page).not.toHaveURL(/\/login$/)
+
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Import' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByText('Import tests')).toBeVisible()
+
+  await dialog.locator('input[type="file"]:not([aria-label])').setInputFiles('fixtures/shop.postman_collection.json')
+  await dialog.getByRole('button', { name: 'Next' }).click()
+
+  // Preview: format, tests and their request counts, warnings.
+  await expect(dialog.getByText(/Found a Postman collection with 3 tests and 9 requests/)).toBeVisible()
+  // Each test is a <summary> line "<name> <n> requests"; scope to those so "Shop API" (also the
+  // server name) and "Auth" (also a request URL) don't match elsewhere in the dialog.
+  const summaries = dialog.locator('summary')
+  await expect(summaries.filter({ hasText: 'Auth' })).toContainText('2 requests')
+  await expect(summaries.filter({ hasText: 'Orders' })).toContainText('6 requests')
+  await expect(summaries.filter({ hasText: 'Shop API' })).toContainText('1 request')
+  await expect(dialog.getByText(/5 things could not be imported exactly/)).toBeVisible()
+
+  await dialog.getByRole('button', { name: 'Import 3 tests' }).click()
+  await expect(page).toHaveURL(/\/projects\/\d+$/)
+  const projectUrl = page.url()
+
+  await expect(page.getByRole('link', { name: 'Auth', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Orders', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Shop API', exact: true })).toBeVisible()
+
+  await page.getByRole('link', { name: 'Orders', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Requests' }).getByRole('listitem')).toHaveCount(6)
+
+  await page.goto(projectUrl)
+  const download = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export' }).click()
+  await page.getByRole('menuitem', { name: 'Postman collection' }).click()
+  const file = await download
+  const path = await file.path()
+  const text = fs.readFileSync(path!, 'utf8')
+  const collection = JSON.parse(text)
+  expect(collection.info.schema).toContain('v2.1.0')
+  expect(countRequests(collection.item)).toBe(9)
+
+  // Re-import that exported file (via the API, no need to drive the file input again) and confirm
+  // it round-trips to the same 9 requests.
+  const preview = await page.request.post('/api/v1/import/preview', {
+    headers: { 'X-Requested-With': 'ndswarm', 'Content-Type': 'application/json' },
+    data: { content: text },
+  })
+  expect(preview.ok()).toBe(true)
+  const body = await preview.json()
+  const requestTotal = (body.tests as { requests: unknown[] }[]).reduce((n, t) => n + t.requests.length, 0)
+  expect(requestTotal).toBe(9)
 })

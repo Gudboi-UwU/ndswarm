@@ -1,0 +1,151 @@
+{
+  "info": {
+    "_postman_id": "5b7c1c1e-7a57-4e0e-9a55-2f1d0c9f7a11",
+    "name": "Shop API",
+    "description": "Storefront endpoints used by the web shop.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://shop.example.com/api", "type": "string" },
+    { "key": "token", "value": "dev-token-123", "type": "string" },
+    { "key": "tenant-id", "value": "acme", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "event": [
+        { "listen": "prerequest", "script": { "type": "text/javascript", "exec": ["pm.variables.set('started', Date.now());"] } }
+      ],
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{$randomEmail}}\",\n  \"password\": \"secret123\",\n  \"remember\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Me",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('ok', () => pm.response.to.have.status(200));"] } }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-Tenant", "value": "{{tenant-id}}" }],
+            "url": { "raw": "{{baseUrl}}/me", "host": ["{{baseUrl}}"], "path": ["me"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "List orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders?page=1&limit={{$randomInt}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "{{$randomInt}}" },
+                { "key": "debug", "value": "true", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin",
+          "item": [
+            {
+              "name": "Delete order",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": { "raw": "{{baseUrl}}/orders/:id", "host": ["{{baseUrl}}"], "path": ["orders", ":id"] }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create order",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "X-Debug", "value": "1", "disabled": true }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{$guid}}\",\n  \"customer\": { \"name\": \"{{$randomFullName}}\", \"vip\": false },\n  \"items\": [\n    { \"sku\": \"ABC-1234\", \"qty\": 2, \"price\": 19.99 },\n    { \"sku\": \"XYZ-0001\", \"qty\": 1, \"price\": 5.5 }\n  ],\n  \"color\": \"{{$randomHexColor}}\",\n  \"coupon\": null,\n  \"total\": 45.48\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{baseUrl}}/orders", "host": ["{{baseUrl}}"], "path": ["orders"] }
+          }
+        },
+        {
+          "name": "Quick order",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "sku", "value": "ABC-1234", "type": "text" },
+                { "key": "qty", "value": "{{$randomInt}}", "type": "text" },
+                { "key": "note", "value": "skip me", "type": "text", "disabled": true }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/orders/quick", "host": ["{{baseUrl}}"], "path": ["orders", "quick"] }
+          }
+        },
+        {
+          "name": "Upload invoice",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "orderId", "value": "{{$randomUUID}}", "type": "text" },
+                { "key": "file", "type": "file", "src": "/home/me/invoice.pdf" }
+              ]
+            },
+            "url": { "raw": "{{baseUrl}}/orders/invoice", "host": ["{{baseUrl}}"], "path": ["orders", "invoice"] }
+          }
+        },
+        {
+          "name": "Order graph",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "graphql",
+              "graphql": { "query": "query { orders { id total } }", "variables": "{\"first\": 10}" }
+            },
+            "url": { "raw": "{{baseUrl}}/graphql", "host": ["{{baseUrl}}"], "path": ["graphql"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+      }
+    }
+  ]
+}
