@@ -9,6 +9,7 @@ import { keys } from '@/api/keys'
 import type { Point, Project, Run, RunKey, Stats, Tick } from '@/api/types'
 import { useRunStream } from '@/api/ws'
 import { ConfirmDelete } from '@/components/page'
+import { AggNote, AggPicker } from '@/components/agg-picker'
 import { RunStatus } from '@/components/run-table'
 import { Help, HelpIcon, SortButton } from '@/components/table-help'
 import { TimeChart, type ChartSeries } from '@/components/time-chart'
@@ -18,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatBytes, formatDate, formatElapsed, formatNumber } from '@/lib/format'
+import { aggregate, saveAggMode, savedAggMode, type AggMode } from '@/lib/aggregate'
 import { glossary } from '@/lib/glossary'
 import { categoryLabel, emptyFilters, keyLabel, statusText, type LogFilters } from '@/lib/run'
 import { sortRows, type SortState } from '@/lib/sort'
@@ -357,9 +359,13 @@ function StatCard({ label, help, value, sub, alert }: { label: string; help: str
 
 type KeySort = 'name' | 'count' | 'err' | 'avg' | 'p95' | 'p99' | 'rps'
 
-/** One row per request, plus a total row for all requests together. */
+/**
+ * One row per request, plus a total row whose meaning the viewer picks: all requests
+ * combined (weighted, the default), or a statistic over the rows (sum, mean, median, max, min).
+ */
 function EndpointTable({ keys: runKeys, stats, total }: { keys: RunKey[]; stats: { keyId: number; total: Stats }[]; total?: Stats }) {
   const [sort, setSort] = useState<SortState<KeySort>>({ key: 'count', dir: 'desc' })
+  const [mode, setMode] = useState<AggMode>(savedAggMode)
   const byId = new Map(stats.map((s) => [s.keyId, s.total]))
   const rows = sortRows(runKeys, sort, (k, key) => {
     const st = byId.get(k.keyId)
@@ -367,53 +373,108 @@ function EndpointTable({ keys: runKeys, stats, total }: { keys: RunKey[]; stats:
     if (!st) return null
     return key === 'err' ? (st.count ? st.err / st.count : 0) : st[key]
   })
+  const present = runKeys.map((k) => byId.get(k.keyId)).filter((s): s is Stats => !!s)
+  const slowest = Math.max(...present.map((s) => s.avg), 0.001)
+  const agg = aggregateRow(present, mode, total)
+  const aggPct = mode === 'combined' || mode === 'sum' || !agg ? undefined : aggregate(present.map((x) => (x.count ? (x.err / x.count) * 100 : 0)), mode)
   const head = (label: string, key: KeySort, help?: string, right = true) => <SortButton label={label} sortKey={key} sort={sort} onSort={setSort} help={help} align={right ? 'right' : 'left'} />
-  const cells = (s: Stats | undefined) => (
-    <>
-      <TableCell className="text-right">{s ? formatNumber(s.count) : '-'}</TableCell>
-      <TableCell className={cn('text-right', s && s.err > 0 && 'text-destructive')}>{s ? `${formatNumber(s.err)} (${formatNumber(s.count ? (s.err / s.count) * 100 : 0, 1)}%)` : '-'}</TableCell>
-      <TableCell className="text-right">{s ? `${formatNumber(s.avg, 1)} ms` : '-'}</TableCell>
-      <TableCell className="text-right">{s ? `${formatNumber(s.p95, 1)} ms` : '-'}</TableCell>
-      <TableCell className="text-right">{s ? `${formatNumber(s.p99, 1)} ms` : '-'}</TableCell>
-      <TableCell className="text-right">{s ? formatNumber(s.rps, 1) : '-'}</TableCell>
-    </>
-  )
+  const pick = (m: AggMode) => {
+    setMode(m)
+    saveAggMode(m)
+  }
+
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{head('Request', 'name', undefined, false)}</TableHead>
-            <TableHead className="text-right">{head('Sent', 'count', glossary.sent)}</TableHead>
-            <TableHead className="text-right">{head('Failed', 'err', glossary.failed)}</TableHead>
-            <TableHead className="text-right">{head('Average', 'avg', glossary.avg)}</TableHead>
-            <TableHead className="text-right">{head('95% within', 'p95', glossary.p95)}</TableHead>
-            <TableHead className="text-right">{head('99% within', 'p99', glossary.p99)}</TableHead>
-            <TableHead className="text-right">{head('Per second', 'rps', glossary.rps)}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody className="font-mono text-sm tabular-nums">
-          {rows.map((k) => (
-            <TableRow key={k.keyId}>
-              <TableCell className="font-sans">
-                <span className="mr-2 text-xs text-muted-foreground">{k.method}</span>
-                {keyLabel(k)}
-              </TableCell>
-              {cells(byId.get(k.keyId))}
+    <div className="grid gap-2">
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <TableHeader className="bg-muted/40">
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="min-w-56">{head('Request', 'name', undefined, false)}</TableHead>
+              <TableHead className="text-right">{head('Sent', 'count', glossary.sent)}</TableHead>
+              <TableHead className="text-right">{head('Failed', 'err', glossary.failed)}</TableHead>
+              <TableHead className="min-w-36 text-right">{head('Average, ms', 'avg', glossary.avg)}</TableHead>
+              <TableHead className="text-right">{head('95% within, ms', 'p95', glossary.p95)}</TableHead>
+              <TableHead className="text-right">{head('99% within, ms', 'p99', glossary.p99)}</TableHead>
+              <TableHead className="text-right">{head('Per second', 'rps', glossary.rps)}</TableHead>
             </TableRow>
-          ))}
-          {runKeys.length > 1 && (
-            <TableRow className="border-t-2 bg-muted/40 font-semibold">
-              <TableCell className="font-sans">
-                <Help help={glossary.total}>Total, all requests</Help>
-              </TableCell>
-              {cells(total)}
-            </TableRow>
+          </TableHeader>
+          <TableBody className="font-mono text-sm tabular-nums">
+            {rows.map((k) => {
+              const s = byId.get(k.keyId)
+              return (
+                <TableRow key={k.keyId}>
+                  <TableCell className="font-sans">
+                    <span className="mr-2 inline-block w-14 rounded border px-1.5 py-0.5 text-center font-mono text-[11px] text-muted-foreground">{k.method}</span>
+                    {keyLabel(k)}
+                  </TableCell>
+                  <NumberCells s={s} slowest={slowest} />
+                </TableRow>
+              )
+            })}
+          </TableBody>
+          {runKeys.length > 1 && agg && (
+            <tfoot className="border-t-2 bg-muted/40 font-mono text-sm font-semibold tabular-nums">
+              <TableRow className="hover:bg-muted/40">
+                <TableCell className="font-sans">
+                  <AggPicker value={mode} onChange={pick} />
+                </TableCell>
+                <NumberCells s={agg} slowest={0} pct={aggPct} />
+              </TableRow>
+            </tfoot>
           )}
-        </TableBody>
-      </Table>
+        </Table>
+      </div>
+      {runKeys.length > 1 && <AggNote value={mode} />}
     </div>
   )
+}
+
+/** Sent, failed (count and share), times and rate. A thin bar under the average marks slow requests. */
+function NumberCells({ s, slowest, pct: pctOverride }: { s?: Stats; slowest: number; pct?: number }) {
+  if (!s) return <TableCell colSpan={6} className="text-muted-foreground">no responses yet</TableCell>
+  const pct = pctOverride ?? (s.count ? (s.err / s.count) * 100 : 0)
+  return (
+    <>
+      <TableCell className="text-right">{formatNumber(s.count, Number.isInteger(s.count) ? 0 : 1)}</TableCell>
+      <TableCell className="text-right">
+        <span className={cn(s.err > 0 && 'text-destructive')}>{formatNumber(s.err, Number.isInteger(s.err) ? 0 : 1)}</span>
+        <span className={cn('ml-1.5 text-xs', s.err > 0 ? 'text-destructive/80' : 'text-muted-foreground')}>{formatNumber(pct, pct > 0 && pct < 1 ? 2 : 1)}%</span>
+      </TableCell>
+      <TableCell className="text-right">
+        {formatNumber(s.avg, 1)}
+        {slowest > 0 && s.avg / slowest >= 0.04 && (
+          <span className="mt-1 ml-auto block h-0.5 rounded-full bg-primary/60" style={{ width: `${(s.avg / slowest) * 100}%` }} aria-hidden="true" />
+        )}
+      </TableCell>
+      <TableCell className="text-right">{formatNumber(s.p95, 1)}</TableCell>
+      <TableCell className="text-right">{formatNumber(s.p99, 1)}</TableCell>
+      <TableCell className="text-right">{formatNumber(s.rps, 1)}</TableCell>
+    </>
+  )
+}
+
+/** The total row's numbers for the chosen mode. */
+function aggregateRow(rows: Stats[], mode: AggMode, total?: Stats): Stats | undefined {
+  if (mode === 'combined') return total
+  if (rows.length === 0) return undefined
+  const col = (f: (s: Stats) => number) => aggregate(rows.map(f), mode)
+  const count = col((s) => s.count)
+  const err = col((s) => s.err) // the failure share is aggregated separately by the caller
+  return {
+    count,
+    ok: count - err,
+    err,
+    avg: col((s) => s.avg),
+    min: col((s) => s.min),
+    max: col((s) => s.max),
+    p50: col((s) => s.p50),
+    p90: col((s) => s.p90),
+    p95: col((s) => s.p95),
+    p99: col((s) => s.p99),
+    rps: col((s) => s.rps),
+    bytesIn: col((s) => s.bytesIn),
+    bytesOut: col((s) => s.bytesOut),
+  }
 }
 
 function Codes({ codes }: { codes: Record<string, number> }) {

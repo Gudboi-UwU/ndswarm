@@ -3,6 +3,7 @@ import { DownloadIcon } from 'lucide-react'
 import { useState } from 'react'
 import { api, errorMessage } from '@/api/client'
 import type { IntervalRow, RunKey, Stats, StatusRow } from '@/api/types'
+import { AggNote, AggPicker } from '@/components/agg-picker'
 import { Help, HelpIcon } from '@/components/table-help'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatElapsed, formatNumber } from '@/lib/format'
+import { aggregate, saveAggMode, savedAggMode, type AggMode } from '@/lib/aggregate'
 import { glossary } from '@/lib/glossary'
 import { keyLabel, statusText } from '@/lib/run'
 import { cn } from '@/lib/utils'
@@ -112,7 +114,7 @@ export function SummaryTab({ runId, keys: runKeys, live, total }: { runId: numbe
         )}
         <p className="text-sm text-muted-foreground">
           Times in milliseconds. Percentiles are exact for each slice, computed from every request in it.
-          {inexact && ' Response times need slices in multiples of 5 seconds (10 seconds for runs made before version 0.0.3), so they are left empty here.'}
+          {inexact && ' Response times need slices in multiples of 5 seconds (10 seconds for runs made before 0.0.3), so they are left empty here.'}
         </p>
       </section>
 
@@ -138,79 +140,113 @@ export function SummaryTab({ runId, keys: runKeys, live, total }: { runId: numbe
   )
 }
 
+const INTERVAL_MODES: AggMode[] = ['combined', 'mean', 'median', 'max', 'min']
+
 function IntervalTable({ rows, total }: { rows: IntervalRow[]; total?: Stats }) {
-  const ms = (r: IntervalRow, v: number) => (r.exact ? formatNumber(v, 1) : '-')
+  const [mode, setMode] = useState<AggMode>(() => {
+    const m = savedAggMode()
+    return INTERVAL_MODES.includes(m) ? m : 'combined'
+  })
+  const ms = (r: { exact: boolean }, v: number) => (r.exact ? formatNumber(v, 1) : '-')
+  const pick = (m: AggMode) => {
+    setMode(m)
+    saveAggMode(m)
+  }
+  // Latency statistics only use slices that have exact figures.
+  const exact = rows.filter((r) => r.exact)
+  const stat = (f: (r: IntervalRow) => number, all = rows) => aggregate(all.map(f), mode as Exclude<AggMode, 'combined'>)
+  const foot: (IntervalRow & { pct: number }) | null =
+    mode === 'combined'
+      ? total
+        ? { fromSec: 0, toSec: 0, count: total.count, ok: total.ok, err: total.err, rps: total.rps, avg: total.avg, p50: total.p50, p90: total.p90, p95: total.p95, p99: total.p99, max: total.max, exact: true, pct: total.count ? (total.err / total.count) * 100 : 0 }
+        : null
+      : {
+          fromSec: 0,
+          toSec: 0,
+          count: stat((r) => r.count),
+          ok: stat((r) => r.ok),
+          err: stat((r) => r.err),
+          rps: stat((r) => r.rps),
+          avg: exact.length ? stat((r) => r.avg, exact) : 0,
+          p50: exact.length ? stat((r) => r.p50, exact) : 0,
+          p90: exact.length ? stat((r) => r.p90, exact) : 0,
+          p95: exact.length ? stat((r) => r.p95, exact) : 0,
+          p99: exact.length ? stat((r) => r.p99, exact) : 0,
+          max: exact.length ? stat((r) => r.max, exact) : 0,
+          exact: exact.length > 0,
+          pct: stat((r) => (r.count ? (r.err / r.count) * 100 : 0)),
+        }
+  const failed = (count: number, err: number, pct: number) => (
+    <>
+      <span className={cn(err > 0 && 'text-destructive')}>{formatNumber(err, Number.isInteger(err) ? 0 : 1)}</span>
+      <span className={cn('ml-1.5 text-xs', err > 0 ? 'text-destructive/80' : 'text-muted-foreground')}>{formatNumber(pct, pct > 0 && pct < 1 ? 2 : 1)}%</span>
+      <span className="sr-only"> of {formatNumber(count)}</span>
+    </>
+  )
+  const head = (label: string, help: string) => (
+    <TableHead className="text-right">
+      <Help help={help}>{label}</Help>
+    </TableHead>
+  )
+
   return (
-    <div className="overflow-x-auto rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>
-              <Help help={glossary.interval}>Time</Help>
-            </TableHead>
-            <TableHead className="text-right">
-              <Help help={glossary.sent}>Sent</Help>
-            </TableHead>
-            <TableHead className="text-right">
-              <Help help={glossary.failed}>Failed</Help>
-            </TableHead>
-            <TableHead className="text-right">
-              <Help help={glossary.rps}>Per second</Help>
-            </TableHead>
-            <TableHead className="text-right">
-              <Help help={glossary.avg}>Average</Help>
-            </TableHead>
-            <TableHead className="text-right">
-              <Help help={glossary.p50}>Half within</Help>
-            </TableHead>
-            <TableHead className="text-right">
-              <Help help={glossary.p95}>95% within</Help>
-            </TableHead>
-            <TableHead className="text-right">
-              <Help help={glossary.p99}>99% within</Help>
-            </TableHead>
-            <TableHead className="text-right">
-              <Help help={glossary.max}>Slowest</Help>
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody className="font-mono text-sm tabular-nums">
-          {rows.map((r) => (
-            <TableRow key={r.fromSec}>
-              <TableCell>
-                {formatElapsed(r.fromSec)} to {formatElapsed(r.toSec)}
-              </TableCell>
-              <TableCell className="text-right">{formatNumber(r.count)}</TableCell>
-              <TableCell className={cn('text-right', r.err > 0 && 'text-destructive')}>
-                {formatNumber(r.err)} ({formatNumber(r.count ? (r.err / r.count) * 100 : 0, 1)}%)
-              </TableCell>
-              <TableCell className="text-right">{formatNumber(r.rps, 1)}</TableCell>
-              <TableCell className="text-right">{ms(r, r.avg)}</TableCell>
-              <TableCell className="text-right">{ms(r, r.p50)}</TableCell>
-              <TableCell className="text-right">{ms(r, r.p95)}</TableCell>
-              <TableCell className="text-right">{ms(r, r.p99)}</TableCell>
-              <TableCell className="text-right">{ms(r, r.max)}</TableCell>
+    <div className="grid gap-2">
+      <div className="overflow-x-auto rounded-lg border">
+        <Table>
+          <TableHeader className="bg-muted/40">
+            <TableRow className="hover:bg-transparent">
+              <TableHead>
+                <Help help={glossary.interval}>Time</Help>
+              </TableHead>
+              {head('Sent', glossary.sent)}
+              {head('Failed', glossary.failed)}
+              {head('Per second', glossary.rps)}
+              {head('Average, ms', glossary.avg)}
+              {head('Half within, ms', glossary.p50)}
+              {head('95% within, ms', glossary.p95)}
+              {head('99% within, ms', glossary.p99)}
+              {head('Slowest, ms', glossary.max)}
             </TableRow>
-          ))}
-          {total && rows.length > 1 && (
-            <TableRow className="border-t-2 bg-muted/40 font-semibold">
-              <TableCell className="font-sans">
-                <Help help={glossary.total}>Whole run</Help>
-              </TableCell>
-              <TableCell className="text-right">{formatNumber(total.count)}</TableCell>
-              <TableCell className={cn('text-right', total.err > 0 && 'text-destructive')}>
-                {formatNumber(total.err)} ({formatNumber(total.count ? (total.err / total.count) * 100 : 0, 1)}%)
-              </TableCell>
-              <TableCell className="text-right">{formatNumber(total.rps, 1)}</TableCell>
-              <TableCell className="text-right">{formatNumber(total.avg, 1)}</TableCell>
-              <TableCell className="text-right">{formatNumber(total.p50, 1)}</TableCell>
-              <TableCell className="text-right">{formatNumber(total.p95, 1)}</TableCell>
-              <TableCell className="text-right">{formatNumber(total.p99, 1)}</TableCell>
-              <TableCell className="text-right">{formatNumber(total.max, 1)}</TableCell>
-            </TableRow>
+          </TableHeader>
+          <TableBody className="font-mono text-sm tabular-nums">
+            {rows.map((r) => (
+              <TableRow key={r.fromSec}>
+                <TableCell className="whitespace-nowrap">
+                  {formatElapsed(r.fromSec)}
+                  <span className="text-muted-foreground"> to </span>
+                  {formatElapsed(r.toSec)}
+                </TableCell>
+                <TableCell className="text-right">{formatNumber(r.count)}</TableCell>
+                <TableCell className="text-right">{failed(r.count, r.err, r.count ? (r.err / r.count) * 100 : 0)}</TableCell>
+                <TableCell className="text-right">{formatNumber(r.rps, 1)}</TableCell>
+                <TableCell className="text-right">{ms(r, r.avg)}</TableCell>
+                <TableCell className="text-right">{ms(r, r.p50)}</TableCell>
+                <TableCell className="text-right">{ms(r, r.p95)}</TableCell>
+                <TableCell className="text-right">{ms(r, r.p99)}</TableCell>
+                <TableCell className="text-right">{ms(r, r.max)}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+          {foot && rows.length > 1 && (
+            <tfoot className="border-t-2 bg-muted/40 font-mono text-sm font-semibold tabular-nums">
+              <TableRow className="hover:bg-muted/40">
+                <TableCell className="font-sans">
+                  <AggPicker value={mode} onChange={pick} modes={INTERVAL_MODES} />
+                </TableCell>
+                <TableCell className="text-right">{formatNumber(foot.count, Number.isInteger(foot.count) ? 0 : 1)}</TableCell>
+                <TableCell className="text-right">{failed(foot.count, foot.err, foot.pct)}</TableCell>
+                <TableCell className="text-right">{formatNumber(foot.rps, 1)}</TableCell>
+                <TableCell className="text-right">{ms(foot, foot.avg)}</TableCell>
+                <TableCell className="text-right">{ms(foot, foot.p50)}</TableCell>
+                <TableCell className="text-right">{ms(foot, foot.p95)}</TableCell>
+                <TableCell className="text-right">{ms(foot, foot.p99)}</TableCell>
+                <TableCell className="text-right">{ms(foot, foot.max)}</TableCell>
+              </TableRow>
+            </tfoot>
           )}
-        </TableBody>
-      </Table>
+        </Table>
+      </div>
+      {rows.length > 1 && <AggNote value={mode} />}
     </div>
   )
 }
@@ -228,8 +264,8 @@ function StatusTable({ rows, runKeys }: { rows: StatusRow[]; runKeys: RunKey[] }
   return (
     <div className="overflow-x-auto rounded-lg border">
       <Table>
-        <TableHeader>
-          <TableRow>
+        <TableHeader className="bg-muted/40">
+          <TableRow className="hover:bg-transparent">
             <TableHead>Request</TableHead>
             {codes.map((c) => (
               <TableHead key={c} className={cn('text-right font-mono', Number(c) >= 400 && 'text-destructive')}>
@@ -250,8 +286,10 @@ function StatusTable({ rows, runKeys }: { rows: StatusRow[]; runKeys: RunKey[] }
             </TableRow>
           ))}
           {runKeys.length > 1 && (
-            <TableRow className="border-t-2 bg-muted/40 font-semibold">
-              <TableCell className="font-sans">Total, all requests</TableCell>
+            <TableRow className="border-t-2 bg-muted/40 font-semibold hover:bg-muted/40">
+              <TableCell className="font-sans">
+                <Help help="Every request added up. Counts are simply summed.">Sum of all requests</Help>
+              </TableCell>
               {codes.map((c) => (
                 <TableCell key={c} className="text-right">
                   {formatNumber(totals.get(c) ?? 0)}
