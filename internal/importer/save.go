@@ -21,10 +21,21 @@ type Created struct {
 	Name string `json:"name"`
 }
 
+// projectStore is the slice of project.Service that Save needs, so a test can fake a failure
+// after a new project is created and check that it gets cleaned up.
+type projectStore interface {
+	ListEnvironments(ctx context.Context, projectID int64) ([]model.Environment, error)
+	ListTests(ctx context.Context, projectID int64) ([]project.TestSummary, error)
+	CreateProject(ctx context.Context, p model.Project) (model.Project, error)
+	CreateEnvironment(ctx context.Context, e model.Environment) (model.Environment, error)
+	CreateTest(ctx context.Context, t model.Test) (model.Test, error)
+	DeleteProject(ctx context.Context, id int64) error
+}
+
 // Save creates the servers and tests of a checked bundle in projectID, or in a new project named
 // newProject when projectID is 0. An existing server with the same name is reused, not overwritten,
 // and clashing test names get " (2)", " (3)". A new project is removed again if saving fails.
-func Save(ctx context.Context, svc *project.Service, b Bundle, projectID int64, newProject string) (res Result, err error) {
+func Save(ctx context.Context, svc projectStore, b Bundle, projectID int64, newProject string) (res Result, err error) {
 	res = Result{Tests: []Created{}, Warnings: []string{}}
 	envIDs := map[string]int64{}
 	taken := map[string]bool{}
@@ -47,7 +58,10 @@ func Save(ctx context.Context, svc *project.Service, b Bundle, projectID int64, 
 		if strings.TrimSpace(newProject) == "" {
 			newProject = b.Project.Name
 		}
-		p, err := svc.CreateProject(ctx, model.Project{Name: newProject, Description: b.Project.Description})
+		// Assign to the named return "err" (not a new local one) so the deferred cleanup below
+		// still sees a later failure, such as a server or test that fails to save.
+		var p model.Project
+		p, err = svc.CreateProject(ctx, model.Project{Name: newProject, Description: b.Project.Description})
 		if err != nil {
 			return res, err
 		}

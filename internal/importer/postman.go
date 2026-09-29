@@ -701,14 +701,23 @@ func (c *pm) body(pb *pmBody, contentType, where string) model.Body {
 func (c *pm) jsonFields(raw string) ([]model.Field, bool) {
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.UseNumber()
-	f, err := c.jsonField(dec)
+	f, err := c.jsonField(dec, 0)
 	if err != nil || f.Type != "object" || dec.More() {
 		return nil, false
 	}
 	return f.Children, true
 }
 
-func (c *pm) jsonField(dec *json.Decoder) (model.Field, error) {
+// jsonFieldMaxDepth stops runaway recursion on a maliciously nested body (e.g. "[[[...]]]"
+// repeated to fill the 20MB upload limit), which would otherwise crash the server with a
+// stack overflow. It is well above model.MaxFieldDepth, so any body this deep is going to
+// fail validation anyway and fall back to a raw body.
+const jsonFieldMaxDepth = 64
+
+func (c *pm) jsonField(dec *json.Decoder, depth int) (model.Field, error) {
+	if depth > jsonFieldMaxDepth {
+		return model.Field{}, errors.New("too deeply nested")
+	}
 	tok, err := dec.Token()
 	if err != nil {
 		return model.Field{}, err
@@ -722,7 +731,7 @@ func (c *pm) jsonField(dec *json.Decoder) (model.Field, error) {
 				if err != nil {
 					return f, err
 				}
-				child, err := c.jsonField(dec)
+				child, err := c.jsonField(dec, depth+1)
 				if err != nil {
 					return f, err
 				}
@@ -735,7 +744,7 @@ func (c *pm) jsonField(dec *json.Decoder) (model.Field, error) {
 		f := model.Field{Type: "array", Children: []model.Field{}}
 		n := 0
 		for dec.More() {
-			item, err := c.jsonField(dec)
+			item, err := c.jsonField(dec, depth+1)
 			if err != nil {
 				return f, err
 			}

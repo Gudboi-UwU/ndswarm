@@ -2,6 +2,7 @@ package importer
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -272,6 +273,41 @@ func TestPostmanRoundTrip(t *testing.T) {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("postman export misses %s", want)
 		}
+	}
+}
+
+// TestPostmanMalformed feeds odd or broken Postman collections through Decode and checks
+// only that it never panics and always returns either a bundle or a plain error, never both.
+func TestPostmanMalformed(t *testing.T) {
+	deepFolders := "{}"
+	for i := 0; i < 200; i++ {
+		deepFolders = fmt.Sprintf(`{"name":"f","item":[%s]}`, deepFolders)
+	}
+	deepArray := strings.Repeat("[", 5000) + strings.Repeat("]", 5000)
+
+	cases := []struct {
+		name string
+		col  string
+	}{
+		{"url as bare string", `{"info":{"name":"C","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+			"item":[{"name":"a","request":"https://x.test/a"}]}`},
+		{"item with no request or sub-items", `{"info":{"name":"C","schema":"...collection..."},
+			"item":[{"name":"weird"},{"name":"a","request":"https://x.test/a"}]}`},
+		{"item without a name", `{"info":{"name":"C","schema":"...collection..."},
+			"item":[{"request":"https://x.test/a"}]}`},
+		{"deeply nested folders, no requests", fmt.Sprintf(`{"info":{"name":"C","schema":"...collection..."},"item":[%s]}`, deepFolders)},
+		{"empty collection", `{"info":{"name":"Empty","schema":"...collection..."},"item":[]}`},
+		{"request is null", `{"info":{"name":"C","schema":"...collection..."},"item":[{"name":"a","request":null}]}`},
+		{"deeply nested JSON body (would stack-overflow without a depth guard)", fmt.Sprintf(`{"info":{"name":"C","schema":"...collection..."},
+			"item":[{"name":"a","request":{"method":"POST","url":"https://x.test/a","body":{"mode":"raw","raw":%q,"options":{"raw":{"language":"json"}}}}}]}`, deepArray)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			b, _, err := Decode(c.col, "")
+			if err != nil && len(b.Tests) != 0 {
+				t.Errorf("error %v but also got %d tests", err, len(b.Tests))
+			}
+		})
 	}
 }
 
