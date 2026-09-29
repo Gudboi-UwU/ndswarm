@@ -39,7 +39,7 @@ bundle: image
 # Steady-state throughput of one instance against the dummy target, with the compose CPU limits.
 bench: image
 	@trap '$(COMPOSE) -p ndswarm-bench down -v >/dev/null 2>&1' EXIT; \
-	NDSWARM_PORT=18089 NDSWARM_IMAGE=$(IMAGE) $(COMPOSE) -p ndswarm-bench up -d --wait && \
+	NDSWARM_PORT=18089 NDSWARM_CPUS=4 NDSWARM_IMAGE=$(IMAGE) $(COMPOSE) -p ndswarm-bench up -d --wait && \
 	go run ./tools/bench -url http://127.0.0.1:18089 -target http://dummytarget:8090 -container ndswarm-bench-ndswarm-1
 
 web/node_modules: web/package-lock.json

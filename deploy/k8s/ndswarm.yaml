@@ -9,9 +9,9 @@ metadata:
   labels:
     app.kubernetes.io/name: ndswarm
     app.kubernetes.io/instance: ndswarm
-    app.kubernetes.io/version: "0.4.2"
+    app.kubernetes.io/version: "0.4.3"
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: ndswarm-0.4.2
+    helm.sh/chart: ndswarm-0.4.3
 type: Opaque
 stringData:
   NDSWARM_ADMIN_USER: ""
@@ -26,9 +26,9 @@ metadata:
   labels:
     app.kubernetes.io/name: ndswarm
     app.kubernetes.io/instance: ndswarm
-    app.kubernetes.io/version: "0.4.2"
+    app.kubernetes.io/version: "0.4.3"
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: ndswarm-0.4.2
+    helm.sh/chart: ndswarm-0.4.3
 spec:
   accessModes: [ReadWriteOnce]
   resources:
@@ -43,9 +43,9 @@ metadata:
   labels:
     app.kubernetes.io/name: ndswarm
     app.kubernetes.io/instance: ndswarm
-    app.kubernetes.io/version: "0.4.2"
+    app.kubernetes.io/version: "0.4.3"
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: ndswarm-0.4.2
+    helm.sh/chart: ndswarm-0.4.3
 spec:
   type: ClusterIP
   selector:
@@ -64,9 +64,9 @@ metadata:
   labels:
     app.kubernetes.io/name: ndswarm
     app.kubernetes.io/instance: ndswarm
-    app.kubernetes.io/version: "0.4.2"
+    app.kubernetes.io/version: "0.4.3"
     app.kubernetes.io/managed-by: Helm
-    helm.sh/chart: ndswarm-0.4.2
+    helm.sh/chart: ndswarm-0.4.3
 spec:
   replicas: 1          # SQLite: never more than one writer
   strategy:
@@ -81,7 +81,7 @@ spec:
         app.kubernetes.io/name: ndswarm
         app.kubernetes.io/instance: ndswarm
       annotations:
-        checksum/secret: 9b87da4f4b4e475372b8b675ffa13b8e34e285743866e0170f938b201768c403
+        checksum/secret: 4bbccb2ea9a201bea8105d62fabe63d78872b824bf01a6c41397f07e947dbcc8
     spec:
       terminationGracePeriodSeconds: 30 # a running test is stopped and its results written within 20 s
       securityContext:
@@ -92,7 +92,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: ndswarm
-          image: "ghcr.io/gudboi-uwu/ndswarm:0.4.2"
+          image: "ghcr.io/gudboi-uwu/ndswarm:0.4.3"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

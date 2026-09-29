@@ -61,7 +61,7 @@ docker run -d -p 8089:8089 -v ndswarm-data:/data --ulimit nofile=65536:65536 nds
 ## Performance
 
 `make bench` runs one ndswarm container against the dummy target, both limited to 4 CPU
-cores by the compose file, with 100 virtual users on `GET /fast`. On an 8-core laptop:
+cores (`NDSWARM_CPUS=4`; the compose file has no limit by default), with 100 virtual users on `GET /fast`. On an 8-core laptop:
 
 | Metric | Result |
 |---|---|
