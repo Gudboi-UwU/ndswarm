@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Gudboi-UwU/ndswarm/internal/logsink"
 	"github.com/Gudboi-UwU/ndswarm/internal/metrics"
+	"github.com/Gudboi-UwU/ndswarm/internal/model"
 )
 
 // ---- request logs
@@ -201,18 +201,19 @@ type IntervalRow struct {
 	P95     float64 `json:"p95"`
 	P99     float64 `json:"p99"`
 	Max     float64 `json:"max"`
+	Exact   bool    `json:"exact"` // false when latency figures are unavailable for this size
 }
 
-// Intervals aggregates the whole run per `size` seconds (a multiple of 10). Percentiles
-// come from merged 10-second histograms, so they are exact, not averages of averages.
+// Intervals aggregates the whole run per `size` seconds. Percentiles come from merged
+// histogram buckets, so they are exact, not averages of averages. Runs recorded with a
+// coarser bucket (older versions: 10 s) only get percentiles for multiples of it.
 func (r *Runner) Intervals(ctx context.Context, runID int64, size int) ([]IntervalRow, error) {
-	if size <= 0 || size%metrics.IntervalSec != 0 {
-		return nil, fmt.Errorf("interval must be a multiple of %d seconds", metrics.IntervalSec)
+	if size < 1 || size > 24*3600 {
+		return nil, model.ValidationError{{Path: "interval", Message: "Use 1 second to 24 hours."}}
 	}
 	if _, err := r.Get(ctx, runID); err != nil {
 		return nil, err
 	}
-	per := int64(size / metrics.IntervalSec)
 	rows, err := r.db.R.QueryContext(ctx, `SELECT (t - 1) / ?, sum(count), sum(ok), sum(err) FROM metrics_1s
 		WHERE run_id = ? AND key_id = -1 AND t > 0 GROUP BY 1 ORDER BY 1`, size, runID)
 	if err != nil {
@@ -232,8 +233,9 @@ func (r *Runner) Intervals(ctx context.Context, runID int64, size int) ([]Interv
 	}
 	rows.Close()
 
+	// Buckets are named "<bucket seconds>s:<index>".
 	hists := map[int64][][]byte{}
-	hr, err := r.db.R.QueryContext(ctx, "SELECT bucket, hdr FROM metrics_hdr WHERE run_id = ? AND key_id = -1 AND bucket LIKE '10s:%'", runID)
+	hr, err := r.db.R.QueryContext(ctx, "SELECT bucket, hdr FROM metrics_hdr WHERE run_id = ? AND key_id = -1 AND bucket GLOB '[0-9]*s:[0-9]*'", runID)
 	if err != nil {
 		return nil, err
 	}
@@ -244,19 +246,26 @@ func (r *Runner) Intervals(ctx context.Context, runID int64, size int) ([]Interv
 			hr.Close()
 			return nil, err
 		}
-		idx, _ := strconv.ParseInt(strings.TrimPrefix(bucket, "10s:"), 10, 64)
-		hists[idx/per] = append(hists[idx/per], blob)
+		secStr, idxStr, _ := strings.Cut(bucket, "s:")
+		bsec, _ := strconv.ParseInt(secStr, 10, 64)
+		idx, _ := strconv.ParseInt(idxStr, 10, 64)
+		if bsec <= 0 || int64(size)%bsec != 0 {
+			continue // this bucket does not fit the requested interval exactly
+		}
+		hists[idx*bsec/int64(size)] = append(hists[idx*bsec/int64(size)], blob)
 	}
 	hr.Close()
 	for i := range out {
 		blobs := hists[out[i].FromSec/int64(size)]
 		if len(blobs) == 0 {
-			continue // bucket still open on a live run
+			out[i].Exact = false
+			continue // bucket still open on a live run, or the size does not fit the stored buckets
 		}
 		merged, err := metrics.MergeEncoded(blobs)
 		if err != nil {
 			return nil, err
 		}
+		out[i].Exact = true
 		out[i].Avg, out[i].P50, out[i].P90, out[i].P95, out[i].P99, out[i].Max, _ = metrics.DecodeHistogram(merged)
 	}
 	return out, nil

@@ -164,16 +164,17 @@ type Recorder struct {
 	next    int
 	sec     *window // scratch for the current second across keys
 
-	interval    *window // current 10-second bucket across keys
+	interval    *window // current IntervalSec bucket across keys
 	intervalIdx int
 }
 
-// IntervalSec is the bucket size for exact per-interval percentiles.
-const IntervalSec = 10
+// IntervalSec is the bucket size for exact per-interval percentiles: any multiple of it
+// (5 s, 10 s, 30 s, 1 min, custom) can be summarized exactly by merging buckets.
+const IntervalSec = 5
 
-// Interval is a closed 10-second bucket, histogram encoded for storage.
+// Interval is a closed bucket of IntervalSec seconds, histogram encoded for storage.
 type Interval struct {
-	Index int // bucket number: seconds [Index*10, Index*10+10)
+	Index int // bucket number: seconds [Index*IntervalSec, (Index+1)*IntervalSec)
 	HDR   []byte
 }
 
@@ -211,7 +212,7 @@ type Snapshot struct {
 	Recent       Stats            `json:"recent5s"`
 	Keys         []KeyStats       `json:"keys"`
 	Codes        map[string]int64 `json:"codes"` // cumulative status codes and error categories
-	Interval     *Interval        `json:"-"`     // set when a 10-second bucket closed at this tick
+	Interval     *Interval        `json:"-"`     // set when an interval bucket closed at this tick
 }
 
 // Tick closes the current second. elapsed is seconds since the run started (for total RPS).
@@ -231,7 +232,7 @@ func (r *Recorder) Tick(elapsed float64) Snapshot {
 		}
 		w.reset() // w is now the spare
 	}
-	// The second just closed belongs to bucket (elapsed-1)/10; a new bucket index closes the old one.
+	// The second just closed belongs to bucket (elapsed-1)/IntervalSec; a new index closes the old bucket.
 	if idx := int(max(elapsed-0.5, 0)) / IntervalSec; idx != r.intervalIdx {
 		snap.Interval = r.closeInterval()
 		r.intervalIdx = idx

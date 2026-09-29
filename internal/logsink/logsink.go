@@ -171,6 +171,9 @@ func (s *Sink) enqueue(e *Entry) {
 var numbers = regexp.MustCompile(`0x[0-9a-fA-F]+|\d+`)
 
 func normalize(message string) string {
+	if strings.HasPrefix(message, "HTTP ") {
+		return message // "HTTP 503 Service Unavailable": the number is the point
+	}
 	msg := numbers.ReplaceAllString(message, "N")
 	if len(msg) > 300 {
 		msg = msg[:300]

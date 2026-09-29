@@ -6,6 +6,8 @@ type Project struct {
 	Description string `json:"description"`
 	CreatedAt   int64  `json:"createdAt"`
 	TestCount   int    `json:"testCount"`
+	TargetCount int    `json:"targetCount"`
+	LastRunAt   *int64 `json:"lastRunAt"`
 }
 
 func (p *Project) Validate() error {

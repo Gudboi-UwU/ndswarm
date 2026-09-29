@@ -69,7 +69,7 @@ func (s *Server) errorsView(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// summary?by=interval&interval=10|60 or summary?by=status
+// summary?by=interval&interval=<seconds> or summary?by=status
 func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -79,8 +79,8 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 	case "status":
 		respond(w, r, http.StatusOK)(s.Runner.Statuses(r.Context(), id))
 	case "interval", "":
-		size, _ := strconv.Atoi(r.URL.Query().Get("interval"))
-		if size != 10 && size != 60 {
+		size, err := strconv.Atoi(r.URL.Query().Get("interval"))
+		if err != nil {
 			size = 10
 		}
 		respond(w, r, http.StatusOK)(s.Runner.Intervals(r.Context(), id, size))

@@ -31,7 +31,8 @@ func New(db *store.Store, box *secret.Box) *Service {
 
 func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {
 	rows, err := s.db.R.QueryContext(ctx, `
-		SELECT p.id, p.name, p.description, p.created_at, (SELECT count(*) FROM tests t WHERE t.project_id = p.id)
+		SELECT p.id, p.name, p.description, p.created_at, (SELECT count(*) FROM tests t WHERE t.project_id = p.id),
+			(SELECT count(*) FROM environments e WHERE e.project_id = p.id), (SELECT max(started_at) FROM runs r WHERE r.project_id = p.id)
 		FROM projects p ORDER BY p.name COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
@@ -40,7 +41,7 @@ func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {
 	out := []model.Project{}
 	for rows.Next() {
 		var p model.Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.CreatedAt, &p.TestCount); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.CreatedAt, &p.TestCount, &p.TargetCount, &p.LastRunAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -203,15 +204,31 @@ type TestSummary struct {
 	ProjectName   string `json:"projectName,omitempty"`
 	TargetName    string `json:"targetName,omitempty"`
 	TargetURL     string `json:"targetUrl,omitempty"`
+	LastRunAt     *int64 `json:"lastRunAt"`
 }
 
 // ListAllTests returns every test, newest change first, with its project.
+// ListAllTests returns every test, newest change first, with its project and server.
 func (s *Service) ListAllTests(ctx context.Context) ([]TestSummary, error) {
+	return s.listTests(ctx, 0)
+}
+
+// ListTests returns the tests of one project.
+func (s *Service) ListTests(ctx context.Context, projectID int64) ([]TestSummary, error) {
+	if _, err := s.GetProject(ctx, projectID); err != nil {
+		return nil, err
+	}
+	return s.listTests(ctx, projectID)
+}
+
+func (s *Service) listTests(ctx context.Context, projectID int64) ([]TestSummary, error) {
 	rows, err := s.db.R.QueryContext(ctx, `
 		SELECT t.id, t.name, t.description, t.environment_id, json_array_length(t.config_json, '$.flows'), t.updated_at,
-			t.project_id, p.name, coalesce(e.name, ''), coalesce(json_extract(e.config_json, '$.baseUrl'), '')
+			t.project_id, p.name, coalesce(e.name, ''), coalesce(json_extract(e.config_json, '$.baseUrl'), ''),
+			(SELECT max(started_at) FROM runs WHERE test_id = t.id)
 		FROM tests t JOIN projects p ON p.id = t.project_id LEFT JOIN environments e ON e.id = t.environment_id
-		ORDER BY t.updated_at DESC`)
+		WHERE ? = 0 OR t.project_id = ?
+		ORDER BY t.updated_at DESC`, projectID, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -220,29 +237,7 @@ func (s *Service) ListAllTests(ctx context.Context) ([]TestSummary, error) {
 	for rows.Next() {
 		var t TestSummary
 		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.EnvironmentID, &t.Endpoints, &t.UpdatedAt,
-			&t.ProjectID, &t.ProjectName, &t.TargetName, &t.TargetURL); err != nil {
-			return nil, err
-		}
-		out = append(out, t)
-	}
-	return out, rows.Err()
-}
-
-func (s *Service) ListTests(ctx context.Context, projectID int64) ([]TestSummary, error) {
-	if _, err := s.GetProject(ctx, projectID); err != nil {
-		return nil, err
-	}
-	rows, err := s.db.R.QueryContext(ctx, `
-		SELECT id, name, description, environment_id, json_array_length(config_json, '$.flows'), updated_at
-		FROM tests WHERE project_id = ? ORDER BY updated_at DESC`, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []TestSummary{}
-	for rows.Next() {
-		var t TestSummary
-		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.EnvironmentID, &t.Endpoints, &t.UpdatedAt); err != nil {
+			&t.ProjectID, &t.ProjectName, &t.TargetName, &t.TargetURL, &t.LastRunAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

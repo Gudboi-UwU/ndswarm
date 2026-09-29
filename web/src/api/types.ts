@@ -46,6 +46,8 @@ export interface Project {
   description: string
   createdAt: number
   testCount: number
+  targetCount: number
+  lastRunAt: number | null
 }
 
 export interface EnvVar {
@@ -76,6 +78,11 @@ export interface TestSummary {
   environmentId: number | null
   endpoints: number
   updatedAt: number
+  projectId: number
+  projectName: string
+  targetName: string
+  targetUrl: string
+  lastRunAt: number | null
 }
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
@@ -340,6 +347,7 @@ export interface IntervalRow {
   p95: number
   p99: number
   max: number
+  exact: boolean
 }
 
 export interface StatusRow {

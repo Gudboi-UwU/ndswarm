@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatElapsed, formatNumber } from '@/lib/format'
-import { categoryLabel, keyLabel } from '@/lib/run'
+import { Help, HelpIcon } from '@/components/table-help'
+import { glossary } from '@/lib/glossary'
+import { categoryHelp, categoryLabel, keyLabel } from '@/lib/run'
 import { LogDetailDialog } from './run-logs'
 
 /** What went wrong: totals per category, then each distinct message with an example request. */
@@ -21,14 +23,17 @@ export function ErrorsTab({ runId, keys: runKeys, live, onShowLogs }: { runId: n
   if (view.isError) return <p className="text-sm text-destructive">{errorMessage(view.error)}</p>
   const v = view.data
   const cats = Object.entries(v.byCategory).sort(([, a], [, b]) => b - a)
-  if (cats.length === 0) return <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">No errors in this run.</p>
+  if (cats.length === 0) return <p className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">Nothing failed in this run.</p>
 
   return (
     <div className="grid gap-6">
       <dl className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] gap-3">
         {cats.map(([cat, n]) => (
           <div key={cat} className="rounded-lg border p-3">
-            <dt className="text-xs text-muted-foreground">{categoryLabel[cat] ?? cat}</dt>
+            <dt className="text-xs text-muted-foreground">
+              {categoryLabel[cat] ?? cat}
+              <HelpIcon label={categoryLabel[cat] ?? cat} help={categoryHelp[cat] ?? glossary.failed} />
+            </dt>
             <dd className="mt-1 font-mono text-xl font-semibold text-destructive tabular-nums">{formatNumber(n)}</dd>
           </div>
         ))}
@@ -37,10 +42,16 @@ export function ErrorsTab({ runId, keys: runKeys, live, onShowLogs }: { runId: n
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Message</TableHead>
-              <TableHead>Endpoint</TableHead>
-              <TableHead className="w-24 text-right">Count</TableHead>
-              <TableHead className="w-32">Seen</TableHead>
+              <TableHead>
+                <Help help="What went wrong, as the server or the network reported it. Numbers such as ports are replaced by N so that the same problem is counted once.">What went wrong</Help>
+              </TableHead>
+              <TableHead>Request</TableHead>
+              <TableHead className="w-24 text-right">
+                <Help help="How many requests failed this way, including the ones not kept in the request log.">Times</Help>
+              </TableHead>
+              <TableHead className="w-36">
+                <Help help="The first and the last second of the run in which this failure happened.">When</Help>
+              </TableHead>
               <TableHead className="w-44">
                 <span className="sr-only">Actions</span>
               </TableHead>
@@ -61,11 +72,11 @@ export function ErrorsTab({ runId, keys: runKeys, live, onShowLogs }: { runId: n
                 <TableCell className="text-right">
                   {g.exampleLogId && (
                     <Button variant="ghost" size="sm" onClick={() => setExample(g.exampleLogId)}>
-                      Example
+                      Show one
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={() => onShowLogs(g.category, g.keyId)}>
-                    Logs
+                    All in log
                   </Button>
                 </TableCell>
               </TableRow>
@@ -73,7 +84,7 @@ export function ErrorsTab({ runId, keys: runKeys, live, onShowLogs }: { runId: n
           </TableBody>
         </Table>
       </div>
-      <p className="text-sm text-muted-foreground">Numbers in messages are replaced by N so that the same error from different ports or ids is counted once.</p>
+
       <LogDetailDialog runId={runId} logId={example} keys={runKeys} onClose={() => setExample(null)} />
     </div>
   )

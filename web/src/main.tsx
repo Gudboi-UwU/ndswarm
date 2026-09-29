@@ -3,7 +3,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@ta
 import { ThemeProvider } from 'next-themes'
 import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { createBrowserRouter, RouterProvider } from 'react-router'
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router'
 import { meKey } from '@/api/auth'
 import { ApiError } from '@/api/client'
 import { AppShell, RequireAccess } from '@/components/app-shell'
@@ -16,7 +16,6 @@ import { ProjectPage } from '@/pages/project'
 import { ProjectsPage } from '@/pages/projects'
 import { RunPage } from '@/pages/run'
 import { RunsPage } from '@/pages/runs'
-import { TestsPage } from '@/pages/tests'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { SettingsPage } from '@/pages/settings'
 import { SetupPage } from '@/pages/setup'
@@ -46,7 +45,7 @@ const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <DashboardPage /> },
-          { path: 'tests', element: <TestsPage /> },
+          { path: 'tests', element: <Navigate to="/projects" replace /> },
           { path: 'projects', element: <ProjectsPage /> },
           { path: 'projects/:id', element: <ProjectPage /> },
           {

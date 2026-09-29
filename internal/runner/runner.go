@@ -270,7 +270,7 @@ func (r *Runner) writeSecond(id int64, t engine.Tick) error {
 	}
 	if iv := t.Snap.Interval; iv != nil {
 		if _, err := tx.Exec("INSERT OR REPLACE INTO metrics_hdr (run_id, key_id, bucket, hdr) VALUES (?, -1, ?, ?)",
-			id, fmt.Sprintf("10s:%d", iv.Index), iv.HDR); err != nil {
+			id, fmt.Sprintf("%ds:%d", metrics.IntervalSec, iv.Index), iv.HDR); err != nil {
 			return err
 		}
 	}
@@ -312,7 +312,7 @@ func (r *Runner) finish(id int64, status, reason string, rec *metrics.Recorder, 
 		return err
 	}
 	if iv := rec.FinalInterval(); iv != nil {
-		tx.Exec("INSERT OR REPLACE INTO metrics_hdr (run_id, key_id, bucket, hdr) VALUES (?, -1, ?, ?)", id, fmt.Sprintf("10s:%d", iv.Index), iv.HDR)
+		tx.Exec("INSERT OR REPLACE INTO metrics_hdr (run_id, key_id, bucket, hdr) VALUES (?, -1, ?, ?)", id, fmt.Sprintf("%ds:%d", metrics.IntervalSec, iv.Index), iv.HDR)
 	}
 	if b, err := rec.Histogram(); err == nil {
 		tx.Exec("INSERT INTO metrics_hdr (run_id, key_id, bucket, hdr) VALUES (?, -1, 'total', ?)", id, b)

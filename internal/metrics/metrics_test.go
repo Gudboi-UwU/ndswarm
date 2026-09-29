@@ -61,7 +61,7 @@ func TestRecorder(t *testing.T) {
 func TestIntervals(t *testing.T) {
 	r := NewRecorder(1)
 	var closed []*Interval
-	for sec := 1; sec <= 25; sec++ {
+	for sec := 1; sec <= 13; sec++ { // buckets of 5 s: 1-5, 6-10, 11-13
 		r.Record(0, Sample{LatencyUs: int64(sec) * 1000, Status: 200})
 		if iv := r.Tick(float64(sec)).Interval; iv != nil {
 			closed = append(closed, iv)
@@ -73,13 +73,13 @@ func TestIntervals(t *testing.T) {
 	if len(closed) != 3 || closed[0].Index != 0 || closed[2].Index != 2 {
 		t.Fatalf("intervals %d", len(closed))
 	}
-	// Bucket 0 holds seconds 1-10 (latencies 1..10 ms), bucket 1 seconds 11-20.
+	// Bucket 0 holds seconds 1-5 (latencies 1..5 ms), bucket 1 seconds 6-10.
 	_, p50, _, _, _, maxMs, err := DecodeHistogram(closed[1].HDR)
-	if err != nil || math.Abs(maxMs-20) > 0.1 || p50 < 15 || p50 > 16.1 {
+	if err != nil || math.Abs(maxMs-10) > 0.1 || p50 < 7.9 || p50 > 8.1 {
 		t.Errorf("bucket 1: p50 %v max %v err %v", p50, maxMs, err)
 	}
 	merged, _ := MergeEncoded([][]byte{closed[0].HDR, closed[1].HDR})
-	if _, _, _, _, _, m, _ := DecodeHistogram(merged); math.Abs(m-20) > 0.1 {
+	if _, _, _, _, _, m, _ := DecodeHistogram(merged); math.Abs(m-10) > 0.1 {
 		t.Errorf("merged max %v", m)
 	}
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CopyIcon, PlusIcon, RouteIcon, Trash2Icon } from 'lucide-react'
+import { CopyIcon, PencilIcon, PlusIcon, RouteIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useBlocker, useParams } from 'react-router'
 import { toast } from 'sonner'
@@ -128,8 +128,8 @@ function Builder({ saved }: { saved: Test }) {
       <div className="grid gap-6">
         <header className="grid gap-3">
           <nav className="text-sm text-muted-foreground">
-            <Link to="/tests" className="hover:text-foreground">
-              Tests
+            <Link to="/projects" className="hover:text-foreground">
+              Projects
             </Link>
             {' / '}
             <Link to={`/projects/${saved.projectId}`} className="hover:text-foreground">
@@ -137,6 +137,7 @@ function Builder({ saved }: { saved: Test }) {
             </Link>
           </nav>
           <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center">
             <Input
               aria-label="Test name"
               value={draft.name}
@@ -144,8 +145,10 @@ function Builder({ saved }: { saved: Test }) {
               aria-invalid={shownErrors.get('name') ? true : undefined}
               onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
               title="Click to rename"
-              className="h-10 max-w-md border-transparent bg-transparent px-2 text-xl font-semibold shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent"
+              className="peer h-10 max-w-md border-transparent bg-transparent px-2 text-xl font-semibold shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent"
             />
+            {!readOnly && <PencilIcon className="-ml-1 size-4 text-muted-foreground peer-focus-visible:hidden" aria-hidden="true" />}
+            </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               Server
             <Select
@@ -253,6 +256,7 @@ function Builder({ saved }: { saved: Test }) {
                       >
                         <Switch
                           size="sm"
+                          title={f.enabled ? 'Sent during runs. Click to skip it.' : 'Skipped during runs. Click to send it again.'}
                           aria-label={`Send ${f.name} during runs`}
                           checked={f.enabled}
                           disabled={readOnly}

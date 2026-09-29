@@ -6,10 +6,11 @@ import { toast } from 'sonner'
 import { useMe } from '@/api/auth'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
-import type { Point, Run, RunKey, Stats, Tick } from '@/api/types'
+import type { Point, Project, Run, RunKey, Stats, Tick } from '@/api/types'
 import { useRunStream } from '@/api/ws'
 import { ConfirmDelete } from '@/components/page'
 import { RunStatus } from '@/components/run-table'
+import { Help, HelpIcon, SortButton } from '@/components/table-help'
 import { TimeChart, type ChartSeries } from '@/components/time-chart'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -17,7 +18,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatBytes, formatDate, formatElapsed, formatNumber } from '@/lib/format'
-import { categoryLabel, emptyFilters, keyLabel, type LogFilters } from '@/lib/run'
+import { glossary } from '@/lib/glossary'
+import { categoryLabel, emptyFilters, keyLabel, statusText, type LogFilters } from '@/lib/run'
+import { sortRows, type SortState } from '@/lib/sort'
 import { cn } from '@/lib/utils'
 import { NotFoundPage } from './not-found'
 import { ErrorsTab } from './run-errors'
@@ -66,6 +69,7 @@ function RunView({ run }: { run: Run }) {
   const [tick, setTick] = useState<Tick | undefined>(run.live)
   const [status, setStatus] = useState(run.status)
   const [stopping, setStopping] = useState(false)
+  const project = useQuery({ queryKey: keys.project(run.projectId ?? 0), queryFn: () => api<Project>('GET', `/projects/${run.projectId}`), enabled: !!run.projectId })
   const [deleting, setDeleting] = useState(false)
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') ?? 'overview'
@@ -138,6 +142,18 @@ function RunView({ run }: { run: Run }) {
     <div className="grid gap-8">
       <header className="grid gap-2">
         <nav className="text-sm text-muted-foreground">
+          <Link to="/projects" className="hover:text-foreground">
+            Projects
+          </Link>
+          {project.data && (
+            <>
+              {' / '}
+              <Link to={`/projects/${project.data.id}`} className="hover:text-foreground">
+                {project.data.name}
+              </Link>
+            </>
+          )}
+          {' / '}
           {run.testId ? (
             <Link to={`/tests/${run.testId}`} className="hover:text-foreground">
               {run.testName}
@@ -150,7 +166,7 @@ function RunView({ run }: { run: Run }) {
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{run.testName}</h1>
           <RunStatus run={{ status, verdict: run.verdict }} />
-          {!live && <span className="font-mono text-sm text-muted-foreground tabular-nums">{formatElapsed(elapsed)}</span>}
+          {!live && <span className="text-sm text-muted-foreground">ran for <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span></span>}
           <div className="ml-auto flex gap-2">
             {live && me?.can.run && (
               <Button variant="outline" disabled={status === 'stopping' || stop.isPending} onClick={() => setStopping(true)}>
@@ -199,13 +215,13 @@ function RunView({ run }: { run: Run }) {
           <LogsTab runId={run.id} keys={run.keys} filters={filters} onFilters={setFilters} dropped={tick?.droppedLogs ?? run.summary?.droppedLogs ?? 0} />
         </TabsContent>
         <TabsContent value="summary" className="mt-6">
-          <SummaryTab runId={run.id} keys={run.keys} live={live} />
+          <SummaryTab runId={run.id} keys={run.keys} live={live} total={total} />
         </TabsContent>
         <TabsContent value="overview" className="mt-6 grid gap-8">
       <section aria-label="Totals" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label="Requests per second"
-          help="How many requests the server completed each second. Higher is better, as long as responses stay fast and correct."
+          help={glossary.rps}
           value={total ? formatNumber(live && recent ? recent.rps : total.rps, 0) : '-'}
           sub={total ? (live ? `average ${formatNumber(total.rps, 0)} since the start` : `${formatNumber(total.count)} requests in total`) : undefined}
         />
@@ -217,40 +233,44 @@ function RunView({ run }: { run: Run }) {
         />
         <StatCard
           label="Failed requests"
-          help="Timeouts, connection problems, HTTP 4xx and 5xx answers, and requests that could not be built."
+          help={glossary.failed}
           value={total && total.count > 0 ? `${formatNumber((total.err / total.count) * 100, 2)}%` : '-'}
           sub={total ? `${formatNumber(total.err)} of ${formatNumber(total.count)}` : undefined}
           alert={!!total && total.err > 0}
         />
         <StatCard
           label="Simulated users"
-          help="Users sending requests at the same time."
+          help={glossary.users}
           value={live && tick ? formatNumber(tick.vus) : formatNumber(Math.max(0, ...points.map((p) => p.vus)))}
           sub={live && tick ? `heading for ${tick.targetVus}` : 'at the peak'}
         />
       </section>
 
-      <section aria-label="Charts" className="grid gap-8 lg:grid-cols-2">
-        <TimeChart title="Requests per second" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.rps} series={RPS} digits={0} xMax={xMax} />
-        <TimeChart title="Response time" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.lat} series={LATENCY} unit=" ms" xMax={xMax} />
-        <TimeChart title="Failed requests per second" onPick={(x) => showLogs({ from: String(x), to: String(x), category: 'error' })} data={chart.err} series={ERRORS} digits={0} xMax={xMax} />
-        <TimeChart title="Simulated users" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.vus} series={VUS} digits={0} xMax={xMax} height={160} />
-      </section>
-
-      <section aria-label="Endpoints" className="grid gap-3">
-        <h2 className="text-lg font-medium">By request</h2>
-        <EndpointTable keys={run.keys} stats={keyStats} />
-      </section>
-
-      <section aria-label="Status codes" className="grid gap-3">
-        <h2 className="text-lg font-medium">Responses by status</h2>
+      <section aria-label="Status codes" className="grid gap-2">
+        <h2 className="text-sm font-medium">
+          Responses by status
+          <HelpIcon label="responses by status" help={glossary.status} />
+        </h2>
         <Codes codes={codes} />
         {total && total.bytesIn > 0 && (
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Received {formatBytes(total.bytesIn)}, sent {formatBytes(total.bytesOut)}.
           </p>
         )}
       </section>
+
+      <section aria-label="Charts" className="grid gap-8 lg:grid-cols-2">
+        <TimeChart title="Requests per second" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.rps} series={RPS} digits={0} xMax={xMax} live={live} />
+        <TimeChart title="Response time" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.lat} series={LATENCY} unit=" ms" xMax={xMax} live={live} />
+        <TimeChart title="Failed requests per second" onPick={(x) => showLogs({ from: String(x), to: String(x), category: 'error' })} data={chart.err} series={ERRORS} digits={0} xMax={xMax} live={live} />
+        <TimeChart title="Simulated users" onPick={(x) => showLogs({ from: String(x), to: String(x) })} data={chart.vus} series={VUS} digits={0} xMax={xMax} live={live} height={160} />
+      </section>
+
+      <section aria-label="Endpoints" className="grid gap-3">
+        <h2 className="text-lg font-medium">By request</h2>
+        <EndpointTable keys={run.keys} stats={keyStats} total={total} />
+      </section>
+
 
         </TabsContent>
       </Tabs>
@@ -277,7 +297,7 @@ function RunView({ run }: { run: Run }) {
   )
 }
 
-/** One sentence that answers "how is it going?" before any number needs reading. */
+/** One sentence that answers "how did it go?" before any number needs reading. */
 function Headline({ total, live, status }: { total?: Stats; live: boolean; status: string }) {
   if (!total || total.count === 0) {
     return (
@@ -287,18 +307,29 @@ function Headline({ total, live, status }: { total?: Stats; live: boolean; statu
     )
   }
   const rate = (total.err / total.count) * 100
-  const bad = rate >= 5
-  const title = live
-    ? rate < 1 ? 'Running smoothly' : bad ? 'Many requests are failing' : 'Some requests are failing'
-    : status === 'finished' && rate < 1 ? 'Finished without problems' : rate < 1 ? 'Stopped early, no problems so far' : bad ? 'Many requests failed' : 'Some requests failed'
+  // Three honest levels: nothing failed, a few failed (under 1%), a real problem.
+  const level = total.err === 0 ? 'good' : rate < 1 ? 'some' : 'bad'
+  const stopped = !live && status !== 'finished'
+  const title = {
+    good: live ? 'Running smoothly, nothing failed so far' : stopped ? 'Stopped early, nothing failed' : 'Finished, nothing failed',
+    some: live ? 'Running, a few requests are failing' : stopped ? 'Stopped early, a few requests failed' : 'Finished, a few requests failed',
+    bad: live ? 'Many requests are failing' : stopped ? 'Stopped early, many requests failed' : 'Finished, many requests failed',
+  }[level]
   return (
-    <div className={cn('rounded-lg border px-4 py-3', rate >= 1 ? 'border-destructive/40 bg-destructive/5' : 'border-primary/30 bg-primary/5')}>
-      <p className={cn('font-medium', rate >= 1 ? 'text-destructive' : 'text-primary')}>{title}</p>
+    <div
+      className={cn(
+        'rounded-lg border px-4 py-3',
+        level === 'good' && 'border-primary/30 bg-primary/5',
+        level === 'bad' && 'border-destructive/40 bg-destructive/5',
+      )}
+    >
+      <p className={cn('font-medium', level === 'good' && 'text-primary', level === 'bad' && 'text-destructive')}>{title}</p>
       <p className="mt-0.5 text-sm">
         {live ? 'So far ' : ''}
-        {formatNumber(total.count)} requests, {total.err === 0 ? 'none failed' : `${formatNumber(rate, rate < 1 ? 2 : 1)}% failed`}. Half answered within {formatNumber(total.p50, 1)} ms and 95% within{' '}
-        {formatNumber(total.p95, 1)} ms, at about {formatNumber(total.rps, 0)} requests per second.
-        {rate >= 1 && ' The Failures tab shows what went wrong.'}
+        {formatNumber(total.count)} requests
+        {total.err === 0 ? ', none failed' : <>, <span className="text-destructive">{formatNumber(rate, rate < 1 ? 2 : 1)}% failed</span></>}. Half were answered within{' '}
+        {formatNumber(total.p50, 1)} ms and 95% within {formatNumber(total.p95, 1)} ms, at about {formatNumber(total.rps, 0)} requests per second.
+        {total.err > 0 && ' The Failures tab shows what went wrong.'}
       </p>
     </div>
   )
@@ -324,40 +355,61 @@ function StatCard({ label, help, value, sub, alert }: { label: string; help: str
   )
 }
 
-function EndpointTable({ keys: runKeys, stats }: { keys: RunKey[]; stats: { keyId: number; total: Stats }[] }) {
+type KeySort = 'name' | 'count' | 'err' | 'avg' | 'p95' | 'p99' | 'rps'
+
+/** One row per request, plus a total row for all requests together. */
+function EndpointTable({ keys: runKeys, stats, total }: { keys: RunKey[]; stats: { keyId: number; total: Stats }[]; total?: Stats }) {
+  const [sort, setSort] = useState<SortState<KeySort>>({ key: 'count', dir: 'desc' })
   const byId = new Map(stats.map((s) => [s.keyId, s.total]))
+  const rows = sortRows(runKeys, sort, (k, key) => {
+    const st = byId.get(k.keyId)
+    if (key === 'name') return keyLabel(k)
+    if (!st) return null
+    return key === 'err' ? (st.count ? st.err / st.count : 0) : st[key]
+  })
+  const head = (label: string, key: KeySort, help?: string, right = true) => <SortButton label={label} sortKey={key} sort={sort} onSort={setSort} help={help} align={right ? 'right' : 'left'} />
+  const cells = (s: Stats | undefined) => (
+    <>
+      <TableCell className="text-right">{s ? formatNumber(s.count) : '-'}</TableCell>
+      <TableCell className={cn('text-right', s && s.err > 0 && 'text-destructive')}>{s ? `${formatNumber(s.err)} (${formatNumber(s.count ? (s.err / s.count) * 100 : 0, 1)}%)` : '-'}</TableCell>
+      <TableCell className="text-right">{s ? `${formatNumber(s.avg, 1)} ms` : '-'}</TableCell>
+      <TableCell className="text-right">{s ? `${formatNumber(s.p95, 1)} ms` : '-'}</TableCell>
+      <TableCell className="text-right">{s ? `${formatNumber(s.p99, 1)} ms` : '-'}</TableCell>
+      <TableCell className="text-right">{s ? formatNumber(s.rps, 1) : '-'}</TableCell>
+    </>
+  )
   return (
     <div className="overflow-x-auto rounded-lg border">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Request</TableHead>
-            <TableHead className="text-right">Sent</TableHead>
-            <TableHead className="text-right">Failed</TableHead>
-            <TableHead className="text-right">Average</TableHead>
-            <TableHead className="text-right">95% within</TableHead>
-            <TableHead className="text-right">99% within</TableHead>
-            <TableHead className="text-right">Per second</TableHead>
+            <TableHead>{head('Request', 'name', undefined, false)}</TableHead>
+            <TableHead className="text-right">{head('Sent', 'count', glossary.sent)}</TableHead>
+            <TableHead className="text-right">{head('Failed', 'err', glossary.failed)}</TableHead>
+            <TableHead className="text-right">{head('Average', 'avg', glossary.avg)}</TableHead>
+            <TableHead className="text-right">{head('95% within', 'p95', glossary.p95)}</TableHead>
+            <TableHead className="text-right">{head('99% within', 'p99', glossary.p99)}</TableHead>
+            <TableHead className="text-right">{head('Per second', 'rps', glossary.rps)}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody className="font-mono text-sm tabular-nums">
-          {runKeys.map((k) => {
-            const s = byId.get(k.keyId)
-            return (
-              <TableRow key={k.keyId}>
-                <TableCell className="font-sans">
-                  <span className="mr-2 text-xs text-muted-foreground">{k.method}</span>
-                  {keyLabel(k)}
-                </TableCell>
-                <TableCell className="text-right">{s ? formatNumber(s.count) : '-'}</TableCell>
-                <TableCell className={cn('text-right', s && s.err > 0 && 'text-destructive')}>{s ? `${formatNumber(s.err)} (${formatNumber(s.count ? (s.err / s.count) * 100 : 0, 1)}%)` : '-'}</TableCell>
-                <TableCell className="text-right">{s ? `${formatNumber(s.avg, 1)} ms` : '-'}</TableCell>
-                <TableCell className="text-right">{s ? `${formatNumber(s.p95, 1)} ms` : '-'}</TableCell>
-                <TableCell className="text-right">{s ? `${formatNumber(s.p99, 1)} ms` : '-'}</TableCell>
-                <TableCell className="text-right">{s ? formatNumber(s.rps, 1) : '-'}</TableCell>
-              </TableRow>
-            )
-          })}
+          {rows.map((k) => (
+            <TableRow key={k.keyId}>
+              <TableCell className="font-sans">
+                <span className="mr-2 text-xs text-muted-foreground">{k.method}</span>
+                {keyLabel(k)}
+              </TableCell>
+              {cells(byId.get(k.keyId))}
+            </TableRow>
+          ))}
+          {runKeys.length > 1 && (
+            <TableRow className="border-t-2 bg-muted/40 font-semibold">
+              <TableCell className="font-sans">
+                <Help help={glossary.total}>Total, all requests</Help>
+              </TableCell>
+              {cells(total)}
+            </TableRow>
+          )}
         </TableBody>
       </Table>
     </div>
@@ -372,7 +424,9 @@ function Codes({ codes }: { codes: Record<string, number> }) {
     <dl className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-2">
       {statuses.map(([code, n]) => (
         <div key={code} className="flex items-baseline justify-between rounded-md border px-3 py-2">
-          <dt className={cn('font-mono text-sm', Number(code) >= 400 && 'text-destructive')}>HTTP {code}</dt>
+          <dt className={cn('font-mono text-sm', Number(code) >= 400 && 'text-destructive')}>
+            <Help help={`${statusText[code] ?? 'HTTP status'}. ${Number(code) >= 400 ? 'Counts as failed.' : 'Counts as success.'}`}>HTTP {code}</Help>
+          </dt>
           <dd className="font-mono text-sm tabular-nums">{formatNumber(n)}</dd>
         </div>
       ))}

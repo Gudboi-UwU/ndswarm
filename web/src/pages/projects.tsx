@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderIcon, PlusIcon } from 'lucide-react'
+import { FolderIcon, FolderPlusIcon, PlusIcon } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -8,65 +8,66 @@ import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
 import type { Project } from '@/api/types'
 import { FormField } from '@/components/form-field'
+import { NewTestDialog } from '@/components/new-test-dialog'
 import { EmptyState, PageHeader } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatDate } from '@/lib/format'
 
+/** Top of the hierarchy: projects, then their tests, then each test's runs. */
 export function ProjectsPage() {
   const { data: me } = useMe()
   const projects = useQuery({ queryKey: keys.projects, queryFn: () => api<Project[]>('GET', '/projects') })
   const [creating, setCreating] = useState(false)
+  const [newTest, setNewTest] = useState(false)
   const canEdit = !!me?.can.edit
-
-  const newButton = canEdit && (
-    <Button onClick={() => setCreating(true)}>
-      <PlusIcon />
-      New project
-    </Button>
+  const actions = canEdit && (
+    <>
+      <Button variant="outline" onClick={() => setCreating(true)}>
+        <FolderPlusIcon />
+        New project
+      </Button>
+      <Button onClick={() => setNewTest(true)}>
+        <PlusIcon />
+        New test
+      </Button>
+    </>
   )
 
   return (
     <div className="max-w-5xl">
-      <PageHeader title="Projects and targets" back={<Link to="/tests" className="hover:text-foreground">Tests</Link>} description="Folders for your tests and the servers (targets) they call." actions={projects.data?.length ? newButton : null} />
+      <PageHeader title="Projects" description="A project groups the tests of one system and the servers they run against." actions={projects.data?.length ? actions : null} />
       {projects.isPending ? (
         <Skeleton className="h-40 w-full" />
       ) : projects.isError ? (
         <p className="text-sm text-destructive">{errorMessage(projects.error)}</p>
       ) : projects.data.length === 0 ? (
-        <EmptyState icon={<FolderIcon />} title="No projects yet" action={newButton}>
-          {canEdit ? 'Create a project to keep related tests and targets together.' : 'An editor has not created any projects yet.'}
+        <EmptyState icon={<FolderIcon />} title="No projects yet" action={canEdit && <div className="flex flex-wrap gap-2">{actions}</div>}>
+          {canEdit
+            ? 'Start with New test: it asks for the server address and creates a project for you. Or create an empty project first.'
+            : 'An editor has not created any projects yet.'}
         </EmptyState>
       ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead className="w-24 text-right">Tests</TableHead>
-                <TableHead className="hidden w-48 md:table-cell">Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {projects.data.map((p) => (
-                <TableRow key={p.id} className="relative">
-                  <TableCell>
-                    <Link to={`/projects/${p.id}`} className="font-medium after:absolute after:inset-0 hover:underline">
-                      {p.name}
-                    </Link>
-                    {p.description && <p className="truncate text-sm text-muted-foreground">{p.description}</p>}
-                  </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">{p.testCount}</TableCell>
-                  <TableCell className="hidden text-sm text-muted-foreground md:table-cell">{formatDate(p.createdAt)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <ul className="grid gap-3 sm:grid-cols-2">
+          {projects.data.map((p) => (
+            <li key={p.id} className="relative grid content-start gap-2 rounded-lg border p-4 transition-colors hover:bg-muted/40">
+              <Link to={`/projects/${p.id}`} className="font-medium after:absolute after:inset-0 hover:underline">
+                {p.name}
+              </Link>
+              {p.description && <p className="line-clamp-2 text-sm text-muted-foreground">{p.description}</p>}
+              <p className="text-sm">
+                {p.testCount} test{p.testCount === 1 ? '' : 's'}
+                <span className="text-muted-foreground"> and </span>
+                {p.targetCount} server{p.targetCount === 1 ? '' : 's'}
+              </p>
+              <p className="text-xs text-muted-foreground">{p.lastRunAt ? `Last run ${formatDate(p.lastRunAt)}` : 'No runs yet'}</p>
+            </li>
+          ))}
+        </ul>
       )}
       <ProjectDialog open={creating} onOpenChange={setCreating} />
+      {newTest && <NewTestDialog open={newTest} onOpenChange={setNewTest} />}
     </div>
   )
 }
@@ -108,7 +109,7 @@ export function ProjectDialog({ open, onOpenChange, project }: { open: boolean; 
         <form onSubmit={submit} className="grid gap-5" noValidate>
           <DialogHeader>
             <DialogTitle>{project ? 'Edit project' : 'New project'}</DialogTitle>
-            <DialogDescription>Usually one per service or API you test.</DialogDescription>
+            <DialogDescription>Usually one per system you test, for example "Shop API".</DialogDescription>
           </DialogHeader>
           {save.error && !err?.details.length && <p className="text-sm text-destructive">{errorMessage(save.error)}</p>}
           <FormField id="project-name" label="Name" value={name} onChange={(e) => setName(e.target.value)} error={err?.field('name')} autoFocus />

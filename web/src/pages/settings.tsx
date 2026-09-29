@@ -396,7 +396,7 @@ function TargetsSection() {
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('GET', '/settings') })
   return (
-    <Section title="Targets and retention" description="Limits that apply to every test and run on this server.">
+    <Section title="Allowed servers and retention" description="Limits that apply to every test and run.">
       {settings.isPending ? (
         <Skeleton className="h-48 w-full" />
       ) : settings.isError ? (
@@ -434,7 +434,7 @@ function TargetsForm({ initial, onSaved }: { initial: Settings; onSaved: (s: Set
     <form onSubmit={submit} className="grid max-w-2xl gap-6" noValidate>
       {save.error && !err?.details.length && <p className="text-sm text-destructive">{errorMessage(save.error)}</p>}
       <div className="grid gap-2">
-        <Label htmlFor="allowlist">Allowed target hosts</Label>
+        <Label htmlFor="allowlist">Servers tests may call</Label>
         <Textarea id="allowlist" rows={4} className="font-mono text-[13px]" placeholder={'api.example.com\n*.staging.example.com'} value={allowlist} aria-invalid={hostErr ? true : undefined} onChange={(e) => setAllowlist(e.target.value)} />
         <p className={hostErr ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
           {hostErr ?? 'One host per line. Leave empty to allow any host. Applies to runs, preflight and Try.'}

@@ -73,7 +73,7 @@ func TestRunInsights(t *testing.T) {
 	// Errors: groups count every error, not just logged ones.
 	ev := admin.expect("GET", fmt.Sprintf("/runs/%v/errors", id), "", 200)
 	g := ev["groups"].([]any)[0].(map[string]any)
-	if g["message"] != "HTTP N Internal Server Error" || g["count"].(float64) != total["err"].(float64) || g["exampleLogId"] == nil {
+	if g["message"] != "HTTP 500 Internal Server Error" || g["count"].(float64) != total["err"].(float64) || g["exampleLogId"] == nil {
 		t.Errorf("error group %v (total err %v)", g, total["err"])
 	}
 
@@ -83,6 +83,14 @@ func TestRunInsights(t *testing.T) {
 	res.Body.Close()
 	if !strings.Contains(string(body), `"fromSec":0,"toSec":10`) || !strings.Contains(string(body), `"fromSec":10,"toSec":20`) || strings.Contains(string(body), `"p95":0,`) {
 		t.Errorf("intervals %s", body)
+	}
+	for size, wantExact := range map[int]bool{5: true, 15: true, 7: false} {
+		res, _ := admin.http.Get(fmt.Sprintf("%s/api/v1/runs/%v/summary?by=interval&interval=%d", srv.URL, id, size))
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if !strings.Contains(string(b), fmt.Sprintf(`"fromSec":0,"toSec":%d`, size)) || strings.Contains(string(b), fmt.Sprintf(`"exact":%v`, !wantExact)) {
+			t.Errorf("interval %d: %s", size, b)
+		}
 	}
 	res, _ = admin.http.Get(fmt.Sprintf("%s/api/v1/runs/%v/summary?by=status", srv.URL, id))
 	body, _ = io.ReadAll(res.Body)

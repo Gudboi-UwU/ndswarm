@@ -52,7 +52,7 @@ export function EnvironmentDialog({
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
         <form onSubmit={submit} className="grid gap-6" noValidate>
           <DialogHeader>
-            <DialogTitle>{env ? `Edit ${env.name}` : 'New target'}</DialogTitle>
+            <DialogTitle>{env ? `Edit ${env.name}` : 'New server'}</DialogTitle>
             <DialogDescription>The server you want to test, plus values shared by its tests. Secret values are encrypted and never shown again.</DialogDescription>
           </DialogHeader>
           {save.error && !err?.details.length && <p className="text-sm text-destructive">{errorMessage(save.error)}</p>}
@@ -121,7 +121,7 @@ export function EnvironmentDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={save.isPending || !draft.name.trim()}>
-              {env ? 'Save' : 'Create target'}
+              {env ? 'Save' : 'Add server'}
             </Button>
           </DialogFooter>
         </form>

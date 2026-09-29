@@ -82,7 +82,7 @@ function Picker({ value, type, onPick }: { value: string; type?: FieldType; onPi
   const groups = new Map<string, { label: string; snippet: string; hint: string }[]>()
   if (variables.length) {
     groups.set(
-      'Target variables',
+      'Server variables',
       variables.map((v) => ({ label: v.key, snippet: `{{var "${v.key}"}}`, hint: v.secret ? 'secret' : '' })),
     )
   }

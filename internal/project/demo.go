@@ -22,7 +22,7 @@ func (s *Service) SeedDemo(ctx context.Context, target string) (bool, error) {
 		return false, s.db.SetSetting(ctx, demoSetting, "skipped")
 	}
 
-	p, err := s.CreateProject(ctx, model.Project{Name: "Demo shop", Description: "A ready-made test against the bundled dummy target. Press Start to see live results."})
+	p, err := s.CreateProject(ctx, model.Project{Name: "Demo shop", Description: "A ready-made test against the bundled dummy target. Open the test and press Run test to see live results."})
 	if err != nil {
 		return false, err
 	}

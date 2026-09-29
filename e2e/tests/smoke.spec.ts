@@ -10,7 +10,9 @@ test('setup, run the demo, read results', async ({ page }) => {
   await page.getByRole('button', { name: 'Create admin' }).click()
   await expect(page.getByText('Load test an API in three steps')).toBeVisible()
 
-  await page.getByRole('link', { name: 'Tests', exact: true }).click()
+  // Big to small: projects, then the project's tests.
+  await page.getByRole('link', { name: 'Projects', exact: true }).click()
+  await page.getByRole('link', { name: 'Demo shop' }).click()
   await page.getByRole('link', { name: 'Browse and checkout' }).click()
   await expect(page.getByRole('list', { name: 'Requests' }).getByRole('listitem')).toHaveCount(5)
 
@@ -30,10 +32,14 @@ test('setup, run the demo, read results', async ({ page }) => {
   await expect(totals.getByText('Requests per second')).toBeVisible()
   await expect(totals.locator('p.font-mono').first()).not.toHaveText('-', { timeout: 10_000 })
   await expect(page.getByText('Passed', { exact: true })).toBeVisible({ timeout: 40_000 })
-  await expect(page.getByText(/Finished without problems|Some requests failed/)).toBeVisible()
+  await expect(page.getByText(/^Finished, /)).toBeVisible()
 
   await page.getByRole('tab', { name: 'Details' }).click()
   await expect(page.getByRole('cell', { name: /0:00 to 0:10/ })).toBeVisible()
+  await page.getByRole('radio', { name: 'Custom' }).click()
+  await page.getByLabel('Custom interval unit').selectOption('1')
+  await page.getByLabel('Custom interval', { exact: true }).fill('15')
+  await expect(page.getByRole('cell', { name: /0:00 to 0:15/ })).toBeVisible()
   await expect(page.getByRole('columnheader', { name: '200' })).toBeVisible()
 
   await page.getByRole('tab', { name: 'Request log' }).click()

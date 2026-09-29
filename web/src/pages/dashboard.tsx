@@ -3,6 +3,8 @@ import { ActivityIcon, PlusIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useMe } from '@/api/auth'
 import { NewTestDialog } from '@/components/new-test-dialog'
+import { HelpIcon } from '@/components/table-help'
+import { glossary } from '@/lib/glossary'
 import { Link } from 'react-router'
 import { api, errorMessage } from '@/api/client'
 import type { Dashboard, DashboardStat } from '@/api/types'
@@ -23,7 +25,24 @@ export function DashboardPage() {
 
   return (
     <div className="grid max-w-6xl gap-8">
-      <PageHeader title="Home" />
+      <PageHeader
+        title="Home"
+        actions={
+          (d.recent.length > 0 || d.active) && (
+            <>
+              <Button variant="outline" asChild>
+                <Link to="/projects">Projects</Link>
+              </Button>
+              {me?.can.edit && (
+                <Button onClick={() => setCreating(true)}>
+                  <PlusIcon />
+                  New test
+                </Button>
+              )}
+            </>
+          )
+        }
+      />
       {d.recent.length === 0 && !d.active && <GettingStarted canEdit={!!me?.can.edit} onNew={() => setCreating(true)} />}
       {creating && <NewTestDialog open={creating} onOpenChange={setCreating} />}
       {d.active && (
@@ -48,10 +67,10 @@ export function DashboardPage() {
 
       {d.recent.length > 0 && (
       <section aria-label="Totals" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Runs today" value={formatNumber(d.today.runs)} />
-        <Stat label="Pass rate, 7 days" value={d.week.finished ? `${formatNumber(d.week.passRate * 100, 0)}%` : '-'} sub={passSub(d.week)} />
-        <Stat label="Requests, 7 days" value={formatNumber(d.week.requests)} />
-        <Stat label="Failed requests, 7 days" value={d.week.requests ? `${formatNumber((d.week.errors / d.week.requests) * 100, 2)}%` : '-'} />
+        <Stat label="Runs today" help="Runs started since midnight." value={formatNumber(d.today.runs)} />
+        <Stat label="Runs passed, last 7 days" help={glossary.result} value={d.week.finished ? `${formatNumber(d.week.passRate * 100, 0)}%` : '-'} sub={passSub(d.week)} />
+        <Stat label="Requests, last 7 days" help={glossary.requests} value={formatNumber(d.week.requests)} />
+        <Stat label="Failed requests, last 7 days" help={glossary.failed} value={d.week.requests ? `${formatNumber((d.week.errors / d.week.requests) * 100, 2)}%` : '-'} />
       </section>
       )}
 
@@ -103,7 +122,7 @@ function GettingStarted({ canEdit, onNew }: { canEdit: boolean; onNew: () => voi
           </Button>
         )}
         <Button variant="outline" asChild>
-          <Link to="/tests">See existing tests</Link>
+          <Link to="/projects">Browse projects</Link>
         </Button>
       </div>
     </section>
@@ -114,10 +133,13 @@ function passSub(s: DashboardStat) {
   return s.finished ? `${s.passed} of ${s.finished} finished runs` : 'No finished runs'
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Stat({ label, help, value, sub }: { label: string; help: string; value: string; sub?: string }) {
   return (
     <div className="rounded-lg border p-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="text-xs text-muted-foreground">
+        {label}
+        <HelpIcon label={label} help={help} />
+      </p>
       <p className="mt-1 font-mono text-2xl font-semibold tabular-nums">{value}</p>
       <p className="mt-0.5 min-h-4 text-xs text-muted-foreground">{sub}</p>
     </div>

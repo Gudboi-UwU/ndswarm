@@ -7,6 +7,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { formatElapsed } from '@/lib/format'
+import { Help } from '@/components/table-help'
+import { glossary } from '@/lib/glossary'
+import { cn } from '@/lib/utils'
 import { useBuilder } from './draft'
 
 const PREVIEW: ChartSeries[] = [{ label: 'Users', color: '--primary', fill: true }]
@@ -42,42 +45,44 @@ function simpleShape(l: Load): { users: number; ramp: number; total: number } | 
  * stages with patterns for spikes and steps. Virtual users move linearly between stage targets.
  */
 export function LoadEditor({ load, onChange }: { load: Load; onChange: (l: Load) => void }) {
+  const { readOnly } = useBuilder()
   const [custom, setCustom] = useState(() => simpleShape(load) === null)
   const simple = simpleShape(load)
+  const peak = Math.max(...load.stages.map((s) => s.target), 10)
+  const choose = (toCustom: boolean) => {
+    if (!toCustom && !simple) onChange({ ...load, stages: [{ durationSec: 10, target: peak }, { durationSec: 50, target: peak }], maxVUs: peak })
+    setCustom(toCustom)
+  }
   return (
-    <div className="grid gap-8">
-      <div className="grid gap-1">
-        <h2 className="text-lg font-medium">How much load?</h2>
-        <p className="text-sm text-muted-foreground">
-          A simulated user sends the requests one after another, as fast as the server answers. More users means more requests at the same time.
-        </p>
+    <div className="grid gap-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid max-w-[65ch] gap-1">
+          <h2 className="text-lg font-medium">How much load?</h2>
+          <p className="text-sm text-muted-foreground">
+            A <Help help={glossary.users}>simulated user</Help> sends the requests one after another, as fast as the server answers. More users means more requests at the same time.
+          </p>
+        </div>
+        <div className="grid gap-1">
+          <div className="flex rounded-md border p-0.5" role="radiogroup" aria-label="Load mode">
+            {([false, true] as const).map((c) => (
+              <button
+                key={String(c)}
+                type="button"
+                role="radio"
+                aria-checked={custom === c}
+                disabled={readOnly}
+                onClick={() => choose(c)}
+                className={cn('rounded px-3 py-1 text-sm', custom === c ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground')}
+              >
+                {c ? 'Custom stages' : 'Simple'}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">{custom ? 'Spikes, steps, ramping down.' : 'Users, length and ramp-up.'}</p>
+        </div>
       </div>
-      {!custom && simple ? (
-        <SimpleLoad load={load} shape={simple} onChange={onChange} />
-      ) : (
-        <CustomLoad load={load} onChange={onChange} />
-      )}
-      <div className="flex flex-wrap items-center gap-3 border-t pt-4">
-        {custom ? (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              if (!simple) onChange({ ...load, stages: [{ durationSec: 10, target: Math.max(...load.stages.map((s) => s.target), 10) }, { durationSec: 50, target: Math.max(...load.stages.map((s) => s.target), 10) }] })
-              setCustom(false)
-            }}
-          >
-            Use the simple form
-          </Button>
-        ) : (
-          <Button type="button" variant="outline" onClick={() => setCustom(true)}>
-            Customize stages
-          </Button>
-        )}
-        <span className="text-sm text-muted-foreground">
-          {custom ? 'Back to users, length and ramp-up. Custom stages are replaced.' : 'For spikes, steps or ramping down: shape the load stage by stage.'}
-        </span>
-      </div>
+      {!custom && simple ? <SimpleLoad load={load} shape={simple} onChange={onChange} /> : <CustomLoad load={load} onChange={onChange} />}
+      {custom && simple === null && <p className="text-sm text-muted-foreground">Switching to Simple replaces these stages with one ramp-up and a steady part.</p>}
     </div>
   )
 }
@@ -264,7 +269,7 @@ export function SettingsEditor({ settings, onChange }: { settings: HttpSettings;
       <p className="text-sm text-muted-foreground">The defaults suit most tests. Change them only for a specific reason.</p>
       {toggle('keepAlive', 'Keep connections alive', 'Reuse connections between requests, like a browser. Turn off to measure a new connection every time.')}
       {toggle('http2', 'Allow HTTP/2', 'Use HTTP/2 when the server offers it over TLS.')}
-      {toggle('insecureTLS', 'Skip TLS certificate checks', 'For self-signed test servers only. Never for production targets.')}
+      {toggle('insecureTLS', 'Skip TLS certificate checks', 'For self-signed test servers only. Never for production servers.')}
       {toggle('captureBodies', 'Keep bodies in logs', 'Store request and response bodies of logged requests (cut at 16 KB and 64 KB).')}
       <div className="grid gap-2">
         <Label htmlFor="sample">Log successful requests (%)</Label>

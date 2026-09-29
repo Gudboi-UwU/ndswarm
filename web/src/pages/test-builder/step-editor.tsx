@@ -70,7 +70,7 @@ export function EndpointEditor({
         </div>
         {!urlErr && (
           <p className="truncate font-mono text-xs text-muted-foreground" title={full ?? undefined}>
-            {full ?? 'This is a path, but the test has no server address. Choose a target at the top, or enter a full URL.'}
+            {full ?? 'This is a path, but the test has no server address. Choose a server at the top, or enter a full URL.'}
           </p>
         )}
       </div>
