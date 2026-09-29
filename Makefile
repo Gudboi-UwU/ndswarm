@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 GO_BUILD := CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: dev build check clean image bench e2e helm
+.PHONY: dev build check clean image bench e2e helm bundle
 
 # Go server on :8089, dummy target on :8090, Vite on :5173 (proxies /api to Go). Ctrl+C stops all.
 dev: web/node_modules | web/dist
@@ -31,6 +31,10 @@ COMPOSE := docker compose -f deploy/docker-compose.yml
 
 image:
 	docker build -f deploy/Dockerfile -t $(IMAGE) --build-arg VERSION=$(VERSION) .
+
+# Offline bundle of the current image (image file + compose + guide), like the release job makes.
+bundle: image
+	deploy/bundle.sh $(VERSION) $(IMAGE) dist
 
 # Steady-state throughput of one instance against the dummy target, with the compose CPU limits.
 bench: image

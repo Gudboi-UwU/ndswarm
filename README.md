@@ -6,11 +6,24 @@ error and sampled request afterwards. One container, one SQLite file, no code to
 
 ## Quick start
 
+With Docker, using the published image:
+
 ```bash
-git clone https://github.com/Gudboi-UwU/ndswarm && cd ndswarm
-docker compose -f deploy/docker-compose.yml up -d
-open http://localhost:8089   # create the admin account, then open the "Demo shop" project
+docker run -d -p 8089:8089 -v ndswarm-data:/data --ulimit nofile=65536:65536 ghcr.io/gudboi-uwu/ndswarm:latest
+open http://localhost:8089   # create the admin account
 ```
+
+With the demo project and a dummy target to try it on, from a clone of this repository:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d   # builds the image from source
+```
+
+Without internet access on the target machine: download `ndswarm-<version>-linux-<arch>-bundle.tar.gz`
+from [Releases](https://github.com/Gudboi-UwU/ndswarm/releases), unpack it and follow `CARA-PAKAI.txt`.
+
+The repository and its image are private: others need access to the repository, then
+`docker login ghcr.io` with a GitHub token that can read packages.
 
 Tests can call any API the machine can reach: public URLs, your network, or services on the
 same computer. Inside Docker, `localhost` is the ndswarm container itself, so use
@@ -108,6 +121,14 @@ Requires Go 1.27, Node 26 and Docker.
 | `make e2e` | browser smoke test (Playwright) against a fresh compose stack |
 | `make bench` | throughput check, fails below 20,000 req/s |
 | `make helm` | lint the chart, regenerate and validate `deploy/k8s/ndswarm.yaml` |
+| `make bundle` | offline bundle in `dist/` (image file, compose, guide) |
+
+## Releases
+
+Versions follow `Chart.yaml` (`version` and `appVersion`). To release: bump both, commit, then
+`git tag -a vX.Y.Z -m "ndswarm X.Y.Z" && git push origin main vX.Y.Z`. The release workflow
+checks the tag matches the chart, publishes `ghcr.io/gudboi-uwu/ndswarm:X.Y.Z` and `:latest`
+for amd64 and arm64, and creates a GitHub Release with notes, offline bundles and the Helm chart.
 
 Layout: `cmd/` (binaries), `internal/` (Go packages: `api`, `engine`, `runner`, `metrics`,
 `logsink`, `tmpl`, `store`, ...), `web/` (React UI), `deploy/` (Docker, compose, Helm),

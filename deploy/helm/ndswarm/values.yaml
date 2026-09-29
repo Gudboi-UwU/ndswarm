@@ -1,6 +1,8 @@
+# A private image needs imagePullSecrets (a docker-registry secret for ghcr.io).
+imagePullSecrets: []
 image:
   repository: ghcr.io/gudboi-uwu/ndswarm
-  tag: ""            # defaults to the chart appVersion
+  tag: ""            # defaults to the chart appVersion (published by the release workflow)
   pullPolicy: IfNotPresent
 
 # ndswarm keeps its data in SQLite: exactly one replica, replaced (not rolled) on upgrade.

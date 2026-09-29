@@ -1,0 +1,89 @@
+name: release
+
+# Push a tag like v0.4.3 to publish: multi-arch image on GHCR, a GitHub Release with notes,
+# offline bundles (amd64, arm64) and the Helm chart.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/gudboi-uwu/ndswarm
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check the tag matches the chart version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          chart=$(sed -n 's/^appVersion: "\(.*\)"/\1/p' deploy/helm/ndswarm/Chart.yaml)
+          if [ "$version" != "$chart" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match Chart.yaml appVersion $chart"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ env.VERSION }}
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.VERSION }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Offline bundles
+        run: |
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            docker pull --platform "linux/$arch" "$IMAGE:$VERSION"
+            docker tag "$IMAGE:$VERSION" "ndswarm-$arch:$VERSION"
+            deploy/bundle.sh "$VERSION" "ndswarm-$arch:$VERSION" "dist/$arch"
+            mv "dist/$arch/ndswarm-$VERSION-bundle.tar.gz" "dist/ndswarm-$VERSION-linux-$arch-bundle.tar.gz"
+            docker rmi "$IMAGE:$VERSION" >/dev/null
+          done
+
+      - name: Helm chart
+        run: docker run --rm -v "$PWD:/w" -w /w alpine/helm:3.19.0 package deploy/helm/ndswarm -d dist
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > notes.md <<NOTES
+          ## Run it
+
+          \`\`\`bash
+          docker run -d -p 8089:8089 -v ndswarm-data:/data --ulimit nofile=65536:65536 $IMAGE:$VERSION
+          \`\`\`
+
+          With the demo and the dummy target: download the bundle for your machine below
+          (\`linux-amd64\` for Intel/AMD, \`linux-arm64\` for ARM servers and Apple Silicon),
+          unpack it and follow \`CARA-PAKAI.txt\`.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" --title "ndswarm $VERSION" --notes-file notes.md --generate-notes --verify-tag \
+            "dist/ndswarm-$VERSION-linux-amd64-bundle.tar.gz" "dist/ndswarm-$VERSION-linux-arm64-bundle.tar.gz" "dist/ndswarm-$VERSION.tgz"
