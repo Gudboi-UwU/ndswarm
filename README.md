@@ -125,11 +125,14 @@ Requires Go 1.27, Node 26 and Docker.
 
 ## Releases
 
-Versions follow `Chart.yaml` (`version` and `appVersion`). To release: bump both, commit, then
-`git tag -a vX.Y.Z -m "ndswarm X.Y.Z" && git push origin main vX.Y.Z`. The release workflow
-checks the tag matches the chart, publishes `ghcr.io/gudboi-uwu/ndswarm:X.Y.Z` and `:latest`
-for amd64 and arm64, and creates a GitHub Release with notes, offline bundles and the Helm chart.
+Work lands on the `dev` branch. Every push to `dev` runs the checks (`make check`, the Helm
+lint, the browser e2e test); when they pass, CI tags the commit with the next version and
+publishes it:
 
-Layout: `cmd/` (binaries), `internal/` (Go packages: `api`, `engine`, `runner`, `metrics`,
-`logsink`, `tmpl`, `store`, ...), `web/` (React UI), `deploy/` (Docker, compose, Helm),
-`e2e/` (Playwright), `tools/bench/`.
+- the image `ghcr.io/gudboi-uwu/ndswarm:<version>` and `:latest`, for amd64 and arm64,
+- a GitHub Release with notes, offline bundles per architecture and the Helm chart.
+
+The next version is the patch after the latest tag (0.4.3 becomes 0.4.4). For a bigger step,
+set `version` and `appVersion` in `deploy/helm/ndswarm/Chart.yaml` (for example to 0.5.0) in
+the same push; that version is used instead. Pushing a tag `vX.Y.Z` by hand also releases.
+`main` and pull requests run the checks only.

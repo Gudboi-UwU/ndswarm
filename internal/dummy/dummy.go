@@ -6,6 +6,7 @@
 //	ANY  /echo             returns method, path, query, headers and body as JSON
 //	POST /login            {"username":"demo","password":"demo"} -> {"token":"..."}
 //	GET  /me               requires "Authorization: Bearer <token>"
+//	GET  /healthz          200, for container health checks
 package dummy
 
 import (
@@ -38,6 +39,8 @@ func Handler() http.Handler {
 		return hex.EncodeToString(m.Sum(nil))
 	}
 	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 
 	mux.HandleFunc("GET /fast", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

@@ -1,10 +1,17 @@
 name: release
 
-# Push a tag like v0.4.3 to publish: multi-arch image on GHCR, a GitHub Release with notes,
-# offline bundles (amd64, arm64) and the Helm chart.
+# Publishes a version: multi-arch image on GHCR, a GitHub Release with notes, offline bundles
+# (amd64, arm64) and the Helm chart. Runs from a green dev push (called by ci.yml, which tags
+# the commit) or from a tag pushed by hand.
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      version:
+        description: Version to publish, without the v (the tag must exist)
+        type: string
+        required: true
 
 permissions:
   contents: write
@@ -20,16 +27,15 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ inputs.version && format('v{0}', inputs.version) || github.ref }}
 
-      - name: Check the tag matches the chart version
+      - name: Version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          chart=$(sed -n 's/^appVersion: "\(.*\)"/\1/p' deploy/helm/ndswarm/Chart.yaml)
-          if [ "$version" != "$chart" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match Chart.yaml appVersion $chart"
-            exit 1
-          fi
+          version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "Publishing ndswarm $version" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -68,7 +74,7 @@ jobs:
           done
 
       - name: Helm chart
-        run: docker run --rm -v "$PWD:/w" -w /w alpine/helm:3.19.0 package deploy/helm/ndswarm -d dist
+        run: docker run --rm -v "$PWD:/w" -w /w alpine/helm:3.19.0 package deploy/helm/ndswarm -d dist --version "$VERSION" --app-version "$VERSION"
 
       - name: Publish the release
         env:
@@ -85,5 +91,5 @@ jobs:
           (\`linux-amd64\` for Intel/AMD, \`linux-arm64\` for ARM servers and Apple Silicon),
           unpack it and follow \`CARA-PAKAI.txt\`.
           NOTES
-          gh release create "$GITHUB_REF_NAME" --title "ndswarm $VERSION" --notes-file notes.md --generate-notes --verify-tag \
+          gh release create "v$VERSION" --title "ndswarm $VERSION" --notes-file notes.md --generate-notes --verify-tag \
             "dist/ndswarm-$VERSION-linux-amd64-bundle.tar.gz" "dist/ndswarm-$VERSION-linux-arm64-bundle.tar.gz" "dist/ndswarm-$VERSION.tgz"

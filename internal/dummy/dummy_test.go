@@ -26,6 +26,9 @@ func TestDummy(t *testing.T) {
 		return res
 	}
 
+	if c := get("/healthz", "").StatusCode; c != 200 {
+		t.Errorf("/healthz: %d", c)
+	}
 	if c := get("/fast", "").StatusCode; c != 200 {
 		t.Errorf("/fast: %d", c)
 	}
