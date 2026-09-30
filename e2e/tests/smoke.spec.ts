@@ -146,7 +146,9 @@ test('import a Postman collection and export it back out', async ({ page }) => {
 
   await page.goto(projectUrl)
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Export' }).click()
+  // Export lives in the project page's "..." menu, as a submenu.
+  await page.getByRole('button', { name: 'More actions' }).click()
+  await page.getByRole('menuitem', { name: 'Export' }).click()
   await page.getByRole('menuitem', { name: 'Postman collection' }).click()
   const file = await download
   const path = await file.path()
