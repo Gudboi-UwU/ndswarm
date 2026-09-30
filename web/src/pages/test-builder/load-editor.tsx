@@ -158,7 +158,7 @@ export function ThresholdsEditor({ thresholds, onChange }: { thresholds: Thresho
   const { errors, readOnly } = useBuilder()
   const update = (i: number, patch: Partial<Threshold>) => onChange(thresholds.map((t, j) => (j === i ? { ...t, ...patch } : t)))
   const remove = (i: number) => onChange(thresholds.filter((_, j) => j !== i))
-  const add = () => onChange([...thresholds, { id: uid(), metric: 'failed_pct', op: '>=', value: 1 }])
+  const add = () => onChange([...thresholds, { id: uid(), metric: 'failed_pct', op: '<=', value: 1 }])
 
   return (
     <div className="grid gap-3 border-t pt-6">
@@ -170,7 +170,7 @@ export function ThresholdsEditor({ thresholds, onChange }: { thresholds: Thresho
       </div>
       {thresholds.length === 0 && (
         <p className="rounded-md bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-          No rules yet, so a run that finishes always passes. Add one to catch bad results too, for example "failed requests at least 1%" to fail the
+          No rules yet, so a run that finishes always passes. Add one to catch bad results too, for example "failed requests at most 1%" to fail the
           run if the server starts erroring under load.
         </p>
       )}
@@ -179,9 +179,9 @@ export function ThresholdsEditor({ thresholds, onChange }: { thresholds: Thresho
           const err = errors.get(`thresholds.${i}.metric`) ?? errors.get(`thresholds.${i}.op`) ?? errors.get(`thresholds.${i}.value`) ?? errors.get(`thresholds.${i}.id`)
           return (
             <div key={t.id} className="grid gap-1">
-              <div className="grid grid-cols-[minmax(0,1fr)_8rem_6rem_auto] items-center gap-2">
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_6rem_auto] sm:items-center">
                 <Select value={t.metric} onValueChange={(v) => update(i, { metric: v as ThresholdMetric })} disabled={readOnly}>
-                  <SelectTrigger aria-label={`Rule ${i + 1} metric`}>
+                  <SelectTrigger aria-label={`Rule ${i + 1} metric`} className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -192,30 +192,32 @@ export function ThresholdsEditor({ thresholds, onChange }: { thresholds: Thresho
                     ))}
                   </SelectContent>
                 </Select>
-                <Select value={t.op} onValueChange={(v) => update(i, { op: v as ThresholdOp })} disabled={readOnly}>
-                  <SelectTrigger aria-label={`Rule ${i + 1} comparison`}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {OPS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Input
-                  aria-label={`Rule ${i + 1} value`}
-                  type="number"
-                  className="font-mono"
-                  value={t.value}
-                  aria-invalid={err ? true : undefined}
-                  readOnly={readOnly}
-                  onChange={(e) => update(i, { value: Number(e.target.value) })}
-                />
-                <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove rule ${i + 1}`} disabled={readOnly} onClick={() => remove(i)}>
-                  <XIcon />
-                </Button>
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 sm:contents">
+                  <Select value={t.op} onValueChange={(v) => update(i, { op: v as ThresholdOp })} disabled={readOnly}>
+                    <SelectTrigger aria-label={`Rule ${i + 1} comparison`} className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OPS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>
+                          {o.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    aria-label={`Rule ${i + 1} value`}
+                    type="number"
+                    className="font-mono"
+                    value={t.value}
+                    aria-invalid={err ? true : undefined}
+                    readOnly={readOnly}
+                    onChange={(e) => update(i, { value: Number(e.target.value) })}
+                  />
+                  <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove rule ${i + 1}`} disabled={readOnly} onClick={() => remove(i)}>
+                    <XIcon />
+                  </Button>
+                </div>
               </div>
               <p className="text-sm text-muted-foreground">{ruleSentence(t)}</p>
               {err && <p className="text-sm text-destructive">{err}</p>}

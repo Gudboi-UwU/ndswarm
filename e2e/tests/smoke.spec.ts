@@ -59,6 +59,46 @@ test('setup, run the demo, read results', async ({ page }) => {
   expect(Buffer.concat(csv).toString()).toContain('endpoint,requests,ok,errors')
 })
 
+// A pass/fail rule that no real response can meet must fail the run and say so, on both the
+// run page and the runs list.
+test('a broken pass/fail rule fails the run', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Username').fill('admin')
+  await page.getByLabel('Password').fill('e2e-password')
+  await page.getByRole('button', { name: 'Log in' }).click()
+  await expect(page).not.toHaveURL(/\/login$/)
+
+  await page.goto('/projects')
+  await page.getByRole('link', { name: 'Demo shop' }).click()
+  await page.getByRole('link', { name: 'Browse and checkout' }).click()
+  await page.getByRole('tab', { name: 'Load' }).click()
+
+  // Impossible: no real response is under 0.001 ms.
+  await page.getByRole('button', { name: 'Add rule' }).click()
+  await page.getByLabel('Rule 1 metric').click()
+  await page.getByRole('option', { name: 'Average response time (ms)' }).click()
+  await page.getByLabel('Rule 1 comparison').click()
+  await page.getByRole('option', { name: 'below', exact: true }).click()
+  await page.getByLabel('Rule 1 value').fill('0.001')
+  await expect(page.getByText(/average response time is below/)).toBeVisible()
+
+  await page.getByRole('button', { name: 'Run test' }).click()
+  const anyway = page.getByRole('button', { name: 'Run anyway' })
+  await Promise.race([page.waitForURL(/\/runs\/\d+$/), anyway.waitFor().then(() => anyway.click())])
+  await expect(page).toHaveURL(/\/runs\/\d+$/)
+
+  // The verdict badge, not the endpoint table's "Failed" column header.
+  const verdictBadge = page.locator('[title="A pass/fail rule of this test was broken."]')
+  await expect(verdictBadge).toBeVisible({ timeout: 40_000 })
+  await expect(page.getByText('Failed: 1 of 1 rule broken')).toBeVisible()
+  await expect(page.getByText(/average response time is below.*actual/)).toBeVisible()
+
+  await page.getByRole('link', { name: 'Runs', exact: true }).click()
+  const row = page.getByRole('row').filter({ hasText: 'Browse and checkout' }).first()
+  await expect(row).toBeVisible()
+  await expect(row.locator('[title="A pass/fail rule of this test was broken."]')).toBeVisible()
+})
+
 // counts leaf (non-folder) items in a Postman collection, recursively.
 function countRequests(items: { item?: unknown[]; request?: unknown }[]): number {
   return items.reduce((n, it) => n + (it.request ? 1 : countRequests((it.item as typeof items) ?? [])), 0)

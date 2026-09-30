@@ -22,21 +22,28 @@ function metricOf(m: ThresholdMetric) {
   return METRICS.find((x) => x.value === m) ?? METRICS[0]
 }
 
+function cap(s: string): string {
+  return s[0].toUpperCase() + s.slice(1)
+}
+
 export function formatMetric(m: ThresholdMetric, v: number): string {
   const c = metricOf(m)
   return `${formatNumber(v, c.digits)}${c.unit}`
 }
 
-/** "Fail the run if failed requests are at least 1%." */
+// A rule passes when the metric satisfies op+value (e.g. op "<=" passes when actual <= value),
+// so the sentence states that requirement rather than a "fail if" condition, which would say
+// the opposite of what the rule checks.
+/** "Failed requests are at most 1%, or the run fails." */
 export function ruleSentence(t: Pick<Threshold, 'metric' | 'op' | 'value'>): string {
   const m = metricOf(t.metric)
   const op = OPS.find((x) => x.value === t.op) ?? OPS[0]
-  return `Fail the run if ${m.subject} ${m.verb} ${op.label} ${formatMetric(t.metric, t.value)}.`
+  return `${cap(m.subject)} ${m.verb} ${op.label} ${formatMetric(t.metric, t.value)}, or the run fails.`
 }
 
-/** "Failed requests are at least 1%: actual 2.30%." */
+/** "Failed requests are at most 1%: actual 2.30%." */
 export function resultSentence(r: ThresholdResult): string {
   const m = metricOf(r.metric)
   const op = OPS.find((x) => x.value === r.op) ?? OPS[0]
-  return `${m.subject[0].toUpperCase()}${m.subject.slice(1)} ${m.verb} ${op.label} ${formatMetric(r.metric, r.value)}: actual ${formatMetric(r.metric, r.actual)}.`
+  return `${cap(m.subject)} ${m.verb} ${op.label} ${formatMetric(r.metric, r.value)}: actual ${formatMetric(r.metric, r.actual)}.`
 }
