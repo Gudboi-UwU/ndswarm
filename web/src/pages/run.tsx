@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleCheckIcon, CircleHelpIcon, CircleXIcon, SquareIcon, Trash2Icon } from 'lucide-react'
+import { CircleCheckIcon, CircleHelpIcon, CircleXIcon, EllipsisIcon, SquareIcon, Trash2Icon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -8,12 +8,13 @@ import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
 import type { Point, Project, Run, RunKey, Stats, Tick, ThresholdResult } from '@/api/types'
 import { useRunStream } from '@/api/ws'
-import { ConfirmDelete } from '@/components/page'
+import { ConfirmDelete, ErrorState, useTitle } from '@/components/page'
 import { AggNote, AggPicker } from '@/components/agg-picker'
 import { RunStatus } from '@/components/run-table'
 import { Help, HelpIcon, SortButton } from '@/components/table-help'
 import { TimeChart, type ChartSeries } from '@/components/time-chart'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -28,7 +29,8 @@ import { cn } from '@/lib/utils'
 import { NotFoundPage } from './not-found'
 import { ErrorsTab } from './run-errors'
 import { LogsTab } from './run-logs'
-import { ExportMenu, SummaryTab } from './run-summary'
+import { RunExportMenu, SummaryTab } from './run-summary'
+import { StartButton } from './test-builder/start-button'
 
 // Latency percentiles are ordinal: one hue, darker = higher percentile (light) / brighter (dark).
 // Validated with the dataviz palette checks against both surfaces.
@@ -46,7 +48,7 @@ export function RunPage() {
   const id = Number(useParams().id)
   const run = useQuery({ queryKey: keys.run(id), queryFn: () => api<Run>('GET', `/runs/${id}`) })
   if (run.error instanceof ApiError && run.error.status === 404) return <NotFoundPage />
-  if (run.isError) return <p className="text-sm text-destructive">{errorMessage(run.error)}</p>
+  if (run.isError) return <ErrorState error={run.error} onRetry={() => void run.refetch()} />
   if (run.isPending) return <RunSkeleton />
   return <RunView key={id} run={run.data} />
 }
@@ -89,6 +91,8 @@ function RunView({ run }: { run: Run }) {
     mutationFn: () => api<void>('DELETE', `/runs/${run.id}`),
     onSuccess: async () => {
       toast.success(`Deleted run #${run.id}`)
+      await queryClient.invalidateQueries({ queryKey: ['runs'] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard'] })
       await navigate(run.testId ? `/tests/${run.testId}` : '/runs')
     },
     onError: (e) => toast.error(errorMessage(e)),
@@ -154,10 +158,12 @@ function RunView({ run }: { run: Run }) {
   }, [points])
   const xMax = live ? Math.max(planned, Math.ceil(elapsed)) : undefined
 
+  useTitle(`Run #${run.id}`, run.testName)
+
   return (
     <div className="grid gap-8">
       <header className="grid gap-2">
-        <nav className="text-sm text-muted-foreground">
+        <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
           <Link to="/projects" className="hover:text-foreground">
             Projects
           </Link>
@@ -183,18 +189,39 @@ function RunView({ run }: { run: Run }) {
           <h1 className="text-2xl font-semibold tracking-tight">{run.testName}</h1>
           <RunStatus run={{ status, verdict }} rulesCount={thresholds?.length ?? 0} />
           {!live && <span className="text-sm text-muted-foreground">ran for <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span></span>}
-          <div className="ml-auto flex gap-2">
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             {live && me?.can.run && (
-              <Button variant="outline" disabled={status === 'stopping' || stop.isPending} onClick={() => setStopping(true)}>
+              <Button
+                variant="outline"
+                className="border-destructive/40 text-destructive hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
+                disabled={status === 'stopping' || stop.isPending}
+                onClick={() => setStopping(true)}
+              >
                 <SquareIcon />
                 {status === 'stopping' ? 'Stopping' : 'Stop'}
               </Button>
             )}
-            {!live && <ExportMenu runId={run.id} />}
-            {!live && me?.can.edit && (
-              <Button variant="outline" size="sm" aria-label="Delete run" onClick={() => setDeleting(true)}>
-                <Trash2Icon />
+            {!live && run.testId && me?.can.run && <StartButton testId={run.testId} label="Run again" />}
+            {!live && run.testId && (
+              <Button variant="ghost" asChild>
+                <Link to={`/tests/${run.testId}`}>Edit test</Link>
               </Button>
+            )}
+            {!live && <RunExportMenu runId={run.id} />}
+            {!live && me?.can.edit && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" aria-label="More actions">
+                    <EllipsisIcon />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+                    <Trash2Icon />
+                    Delete run
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
@@ -223,7 +250,7 @@ function RunView({ run }: { run: Run }) {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="errors">Failures{total && total.err > 0 ? ` (${formatNumber(total.err)})` : ''}</TabsTrigger>
           <TabsTrigger value="logs">Request log</TabsTrigger>
-          <TabsTrigger value="summary">Details</TabsTrigger>
+          <TabsTrigger value="summary">Over time</TabsTrigger>
         </TabsList>
         <TabsContent value="errors" className="mt-6">
           <ErrorsTab runId={run.id} keys={run.keys} live={live} onShowLogs={(category, key) => showLogs({ category, key: String(key) })} />
@@ -297,7 +324,9 @@ function RunView({ run }: { run: Run }) {
         title={`Delete run #${run.id}?`}
         description="Its metrics and logged requests are removed. This cannot be undone."
         confirm="Delete run"
+        pendingLabel="Deleting"
         pending={remove.isPending}
+        error={remove.error}
         onConfirm={() => remove.mutate()}
         onCancel={() => setDeleting(false)}
       />
@@ -306,7 +335,9 @@ function RunView({ run }: { run: Run }) {
         title="Stop this run?"
         description="Requests in flight are cancelled and not counted. Results so far are kept."
         confirm="Stop run"
+        pendingLabel="Stopping"
         pending={stop.isPending}
+        error={stop.error}
         onConfirm={() => stop.mutate()}
         onCancel={() => setStopping(false)}
       />
@@ -398,7 +429,7 @@ function StatCard({ label, help, value, sub, alert }: { label: string; help: str
         {label}
         <Tooltip>
           <TooltipTrigger asChild>
-            <button type="button" aria-label={`About ${label}`} className="text-muted-foreground/70 hover:text-foreground">
+            <button type="button" aria-label={`About ${label}`} className="text-muted-foreground hover:text-foreground">
               <CircleHelpIcon className="size-3" />
             </button>
           </TooltipTrigger>

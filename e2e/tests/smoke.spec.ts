@@ -36,7 +36,7 @@ test('setup, run the demo, read results', async ({ page }) => {
   await expect(page.getByText('Finished', { exact: true })).toBeVisible({ timeout: 40_000 })
   await expect(page.getByText(/^Finished, /)).toBeVisible()
 
-  await page.getByRole('tab', { name: 'Details' }).click()
+  await page.getByRole('tab', { name: 'Over time' }).click()
   await expect(page.getByRole('cell', { name: /0:00 to 0:10/ })).toBeVisible()
   await page.getByRole('radio', { name: 'Custom' }).click()
   await page.getByLabel('Custom interval unit').selectOption('1')

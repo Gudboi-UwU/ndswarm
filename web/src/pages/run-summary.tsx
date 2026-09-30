@@ -303,7 +303,7 @@ function StatusTable({ rows, runKeys }: { rows: StatusRow[]; runKeys: RunKey[] }
   )
 }
 
-export function ExportMenu({ runId }: { runId: number }) {
+export function RunExportMenu({ runId }: { runId: number }) {
   const link = (what: string, format: string) => `/api/v1/runs/${runId}/export?what=${what}&format=${format}`
   return (
     <DropdownMenu>
@@ -315,7 +315,7 @@ export function ExportMenu({ runId }: { runId: number }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         {[
-          ['summary', 'Summary per endpoint'],
+          ['summary', 'Summary per request'],
           ['timeseries', 'Every second'],
           ['logs', 'Logged requests'],
         ].map(([what, label], i) => (

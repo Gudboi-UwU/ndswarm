@@ -11,7 +11,19 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 /** Starts a run. The server runs preflight first; problems open a dialog. */
-export function StartButton({ testId, blockedReason, beforeStart }: { testId: number; blockedReason?: string; beforeStart?: () => Promise<boolean> }) {
+export function StartButton({
+  testId,
+  label = 'Run test',
+  size,
+  blockedReason,
+  beforeStart,
+}: {
+  testId: number
+  label?: string
+  size?: 'default' | 'sm'
+  blockedReason?: string
+  beforeStart?: () => Promise<boolean>
+}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [preflight, setPreflight] = useState<Preflight | null>(null)
@@ -38,9 +50,9 @@ export function StartButton({ testId, blockedReason, beforeStart }: { testId: nu
   })
 
   const button = (
-    <Button onClick={() => start.mutate(false)} disabled={!!blockedReason || start.isPending}>
+    <Button size={size} onClick={() => start.mutate(false)} disabled={!!blockedReason || start.isPending}>
       <PlayIcon />
-      {start.isPending && !preflight ? 'Checking' : 'Run test'}
+      {start.isPending && !preflight ? 'Checking' : label}
     </Button>
   )
   const blocking = (preflight?.errors.length ?? 0) > 0

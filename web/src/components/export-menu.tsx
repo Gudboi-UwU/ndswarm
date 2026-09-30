@@ -3,12 +3,12 @@ import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 
 /** Download a test or a whole project as a file. `path` is "/tests/1" or "/projects/1". */
-export function ExportMenu({ path, note }: { path: string; note?: string }) {
+export function ExportMenu({ path, note, size }: { path: string; note?: string; size?: 'default' | 'sm' }) {
   const link = (q: string) => `/api/v1${path}/export?${q}`
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost">
+        <Button variant="ghost" size={size}>
           <DownloadIcon />
           Export
         </Button>
