@@ -135,6 +135,16 @@ export interface Flow {
   steps: Step[]
 }
 
+export type ThresholdMetric = 'failed_pct' | 'avg_ms' | 'p95_ms' | 'p99_ms' | 'max_ms' | 'rps'
+export type ThresholdOp = '<' | '<=' | '>' | '>='
+
+export interface Threshold {
+  id: string
+  metric: ThresholdMetric
+  op: ThresholdOp
+  value: number
+}
+
 export interface Test {
   id: number
   projectId: number
@@ -144,6 +154,7 @@ export interface Test {
   flows: Flow[]
   load: Load
   settings: HttpSettings
+  thresholds: Threshold[]
   updatedAt: number
 }
 
@@ -249,6 +260,14 @@ export interface Tick {
   droppedLogs: number
 }
 
+export interface ThresholdResult {
+  metric: ThresholdMetric
+  op: ThresholdOp
+  value: number
+  actual: number
+  passed: boolean
+}
+
 export interface Run {
   id: number
   testId: number | null
@@ -263,7 +282,7 @@ export interface Run {
   createdBy: string
   load: Load
   keys: RunKey[]
-  summary: { elapsedSec: number; droppedLogs: number; total: Stats; keys: KeyStats[]; codes: Record<string, number> } | null
+  summary: { elapsedSec: number; droppedLogs: number; total: Stats; keys: KeyStats[]; codes: Record<string, number>; thresholds?: ThresholdResult[] } | null
   live?: Tick
 }
 

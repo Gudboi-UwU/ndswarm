@@ -24,15 +24,16 @@ const (
 
 // Test is what the Test Builder edits. Every string value except names and keys is a template.
 type Test struct {
-	ID            int64    `json:"id"`
-	ProjectID     int64    `json:"projectId"`
-	Name          string   `json:"name"`
-	Description   string   `json:"description"`
-	EnvironmentID *int64   `json:"environmentId"`
-	Flows         []Flow   `json:"flows"`
-	Load          Load     `json:"load"`
-	Settings      Settings `json:"settings"`
-	UpdatedAt     int64    `json:"updatedAt"`
+	ID            int64       `json:"id"`
+	ProjectID     int64       `json:"projectId"`
+	Name          string      `json:"name"`
+	Description   string      `json:"description"`
+	EnvironmentID *int64      `json:"environmentId"`
+	Flows         []Flow      `json:"flows"`
+	Load          Load        `json:"load"`
+	Settings      Settings    `json:"settings"`
+	Thresholds    []Threshold `json:"thresholds"`
+	UpdatedAt     int64       `json:"updatedAt"`
 }
 
 // Flow runs its steps in order. In the "Endpoints" view each flow has exactly one step.
@@ -111,6 +112,7 @@ func (t *Test) Normalize() {
 	if t.Flows == nil {
 		t.Flows = []Flow{}
 	}
+	t.Thresholds = nonNil(t.Thresholds)
 	t.Load.normalize()
 	for i := range t.Flows {
 		f := &t.Flows[i]
@@ -162,6 +164,7 @@ func (t *Test) Validate() error {
 	v.Check(len(t.Flows) <= MaxFlows, "flows", fmt.Sprintf("At most %d endpoints per test.", MaxFlows))
 	t.Load.validate(&v)
 	t.Settings.validate(&v)
+	validateThresholds(&v, t.Thresholds)
 	flowIDs := map[string]bool{}
 	for i, f := range t.Flows {
 		p := fmt.Sprintf("flows.%d", i)

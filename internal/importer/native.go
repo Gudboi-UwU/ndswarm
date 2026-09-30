@@ -229,7 +229,8 @@ func (b *Bundle) check() ([]string, error) {
 }
 
 func (t Test) model() model.Test {
-	return model.Test{Name: t.Name, Description: t.Description, Flows: t.Flows, Load: t.Load, Settings: t.Settings}
+	// Import/export do not carry pass/fail rules yet; every imported test starts with none.
+	return model.Test{Name: t.Name, Description: t.Description, Flows: t.Flows, Load: t.Load, Settings: t.Settings, Thresholds: []model.Threshold{}}
 }
 
 func details(err error) string {

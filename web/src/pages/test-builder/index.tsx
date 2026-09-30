@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { NotFoundPage } from '../not-found'
 import { BuilderContext, cloneFlow, hasErrorUnder, newEndpoint } from './draft'
-import { LoadEditor, SettingsEditor } from './load-editor'
+import { LoadEditor, SettingsEditor, ThresholdsEditor } from './load-editor'
 import { StartButton } from './start-button'
 import { EndpointEditor } from './step-editor'
 
@@ -81,7 +81,7 @@ function Builder({ saved }: { saved: Test }) {
         const first = e.details.map((d) => /^flows\.(\d+)/.exec(d.path)).find(Boolean)
         if (first) setSelected(Number(first[1]))
         const area = e.details[0].path.split('.')[0]
-        setTab(area === 'load' ? 'load' : area === 'settings' ? 'settings' : 'endpoints')
+        setTab(area === 'load' || area === 'thresholds' ? 'load' : area === 'settings' ? 'settings' : 'endpoints')
         toast.error(`Not saved: ${e.details.length} field(s) need attention.`)
       } else {
         toast.error(errorMessage(e))
@@ -202,7 +202,7 @@ function Builder({ saved }: { saved: Test }) {
             <TabsTrigger value="endpoints" className={cn(hasErrorUnder(shownErrors, 'flows') && 'text-destructive')}>
               Requests
             </TabsTrigger>
-            <TabsTrigger value="load" className={cn(hasErrorUnder(shownErrors, 'load') && 'text-destructive')}>
+            <TabsTrigger value="load" className={cn((hasErrorUnder(shownErrors, 'load') || hasErrorUnder(shownErrors, 'thresholds')) && 'text-destructive')}>
               Load
             </TabsTrigger>
             <TabsTrigger value="settings" className={cn(hasErrorUnder(shownErrors, 'settings') && 'text-destructive')}>
@@ -213,6 +213,7 @@ function Builder({ saved }: { saved: Test }) {
             <fieldset disabled={readOnly} className="min-w-0 max-w-3xl">
               <legend className="sr-only">Load</legend>
               <LoadEditor load={draft.load} onChange={(load) => setDraft((d) => ({ ...d, load }))} />
+              <ThresholdsEditor thresholds={draft.thresholds} onChange={(thresholds) => setDraft((d) => ({ ...d, thresholds }))} />
             </fieldset>
           </TabsContent>
           <TabsContent value="settings" className="mt-6">

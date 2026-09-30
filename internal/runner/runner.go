@@ -54,7 +54,8 @@ type active struct {
 	cancel context.CancelCauseFunc
 	done   chan struct{}
 
-	logs *logsink.Sink
+	logs       *logsink.Sink
+	thresholds []model.Threshold
 
 	mu   sync.Mutex
 	last *TickMsg
@@ -123,6 +124,7 @@ func (r *Runner) Start(ctx context.Context, testID int64, user string, force boo
 	r.mu.Lock()
 	a.id, a.cancel = id, cancel
 	a.logs = logsink.New(r.db, id, len(plan.Keys), plan.Settings.LogSamplePct)
+	a.thresholds = test.Thresholds
 	r.mu.Unlock()
 	r.event(id, "start", map[string]any{"by": user, "forced": force && len(pf.Warnings) > 0})
 	go r.run(runCtx, a, plan)
@@ -194,21 +196,31 @@ func (r *Runner) run(ctx context.Context, a *active, plan *engine.Plan) {
 		status, reason = "aborted", context.Cause(ctx).Error()
 	}
 	a.logs.Close()
-	if err := r.finish(id, status, reason, rec, plan, last, a.logs.Dropped()); err != nil {
+	verdict, results := computeVerdict(status, a.thresholds, last.Snap.Total)
+	if err := r.finish(id, status, reason, rec, plan, last, a.logs.Dropped(), verdict, results); err != nil {
 		slog.Error("finish run", "run", id, "err", err)
 	}
 	r.mu.Lock()
 	r.active = nil
 	r.mu.Unlock()
 	close(a.done)
-	r.pub.Publish(id, StatusMsg{Type: "run.status", RunID: id, Status: status, Verdict: verdictFor(status), EndReason: reason})
+	r.pub.Publish(id, StatusMsg{Type: "run.status", RunID: id, Status: status, Verdict: verdict, EndReason: reason})
 }
 
-func verdictFor(status string) string {
-	if status == "finished" {
-		return "pass" // thresholds decide this once they exist
+// computeVerdict evaluates the test's pass/fail rules against the run's final totals.
+// Only a run that finished on its own gets a verdict; aborted or failed runs get none.
+func computeVerdict(status string, rules []model.Threshold, total metrics.Stats) (string, []ThresholdResult) {
+	if status != "finished" {
+		return "", nil
 	}
-	return ""
+	if len(rules) == 0 {
+		return "pass", nil
+	}
+	results, ok := EvaluateThresholds(rules, total)
+	if ok {
+		return "pass", results
+	}
+	return "fail", results
 }
 
 // TickMsg is the WebSocket "run.tick" message.
@@ -291,10 +303,11 @@ type Summary struct {
 	Total       metrics.Stats      `json:"total"`
 	Keys        []metrics.KeyStats `json:"keys"`
 	Codes       map[string]int64   `json:"codes"`
+	Thresholds  []ThresholdResult  `json:"thresholds,omitempty"`
 }
 
-func (r *Runner) finish(id int64, status, reason string, rec *metrics.Recorder, plan *engine.Plan, last engine.Tick, dropped int64) error {
-	summary, err := json.Marshal(Summary{ElapsedSec: last.Elapsed, DroppedLogs: dropped, Total: last.Snap.Total, Keys: last.Snap.Keys, Codes: last.Snap.Codes})
+func (r *Runner) finish(id int64, status, reason string, rec *metrics.Recorder, plan *engine.Plan, last engine.Tick, dropped int64, verdict string, results []ThresholdResult) error {
+	summary, err := json.Marshal(Summary{ElapsedSec: last.Elapsed, DroppedLogs: dropped, Total: last.Snap.Total, Keys: last.Snap.Keys, Codes: last.Snap.Codes, Thresholds: results})
 	if err != nil {
 		return err
 	}
@@ -303,12 +316,12 @@ func (r *Runner) finish(id int64, status, reason string, rec *metrics.Recorder, 
 		return err
 	}
 	defer tx.Rollback()
-	var verdict any
-	if v := verdictFor(status); v != "" {
-		verdict = v
+	var verdictArg any
+	if verdict != "" {
+		verdictArg = verdict
 	}
 	if _, err := tx.Exec("UPDATE runs SET status = ?, verdict = ?, end_reason = ?, ended_at = ?, summary_json = ? WHERE id = ?",
-		status, verdict, reason, r.now().UnixMilli(), string(summary), id); err != nil {
+		status, verdictArg, reason, r.now().UnixMilli(), string(summary), id); err != nil {
 		return err
 	}
 	if iv := rec.FinalInterval(); iv != nil {

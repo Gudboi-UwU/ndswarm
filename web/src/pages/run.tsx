@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CircleHelpIcon, SquareIcon, Trash2Icon } from 'lucide-react'
+import { CircleCheckIcon, CircleHelpIcon, CircleXIcon, SquareIcon, Trash2Icon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { useMe } from '@/api/auth'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
-import type { Point, Project, Run, RunKey, Stats, Tick } from '@/api/types'
+import type { Point, Project, Run, RunKey, Stats, Tick, ThresholdResult } from '@/api/types'
 import { useRunStream } from '@/api/ws'
 import { ConfirmDelete } from '@/components/page'
 import { AggNote, AggPicker } from '@/components/agg-picker'
@@ -23,6 +23,7 @@ import { aggregate, saveAggMode, savedAggMode, type AggMode } from '@/lib/aggreg
 import { glossary } from '@/lib/glossary'
 import { categoryLabel, emptyFilters, keyLabel, statusText, type LogFilters } from '@/lib/run'
 import { sortRows, type SortState } from '@/lib/sort'
+import { resultSentence } from '@/lib/thresholds'
 import { cn } from '@/lib/utils'
 import { NotFoundPage } from './not-found'
 import { ErrorsTab } from './run-errors'
@@ -201,7 +202,8 @@ function RunView({ run }: { run: Run }) {
         )}
       </header>
 
-      <Headline total={total} live={live} status={status} />
+      <Headline total={total} live={live} status={status} verdict={run.verdict} />
+      {run.summary?.thresholds && run.summary.thresholds.length > 0 && <ThresholdsBlock results={run.summary.thresholds} />}
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -300,7 +302,7 @@ function RunView({ run }: { run: Run }) {
 }
 
 /** One sentence that answers "how did it go?" before any number needs reading. */
-function Headline({ total, live, status }: { total?: Stats; live: boolean; status: string }) {
+function Headline({ total, live, status, verdict }: { total?: Stats; live: boolean; status: string; verdict: Run['verdict'] }) {
   if (!total || total.count === 0) {
     return (
       <p className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">
@@ -309,13 +311,20 @@ function Headline({ total, live, status }: { total?: Stats; live: boolean; statu
     )
   }
   const rate = (total.err / total.count) * 100
-  // Three honest levels: nothing failed, a few failed (under 1%), a real problem.
-  const level = total.err === 0 ? 'good' : rate < 1 ? 'some' : 'bad'
+  const ruleFailed = status === 'finished' && verdict === 'fail'
+  // Three honest levels: nothing failed, a few failed (under 1%), a real problem (or a broken rule).
+  const level = ruleFailed ? 'bad' : total.err === 0 ? 'good' : rate < 1 ? 'some' : 'bad'
   const stopped = !live && status !== 'finished'
   const title = {
     good: live ? 'Running smoothly, nothing failed so far' : stopped ? 'Stopped early, nothing failed' : 'Finished, nothing failed',
     some: live ? 'Running, a few requests are failing' : stopped ? 'Stopped early, a few requests failed' : 'Finished, a few requests failed',
-    bad: live ? 'Many requests are failing' : stopped ? 'Stopped early, many requests failed' : 'Finished, many requests failed',
+    bad: live
+      ? 'Many requests are failing'
+      : stopped
+        ? 'Stopped early, many requests failed'
+        : ruleFailed && total.err === 0
+          ? 'Finished, but a pass/fail rule failed'
+          : 'Finished, many requests failed',
   }[level]
   return (
     <div
@@ -332,7 +341,35 @@ function Headline({ total, live, status }: { total?: Stats; live: boolean; statu
         {total.err === 0 ? ', none failed' : <>, <span className="text-destructive">{formatNumber(rate, rate < 1 ? 2 : 1)}% failed</span></>}. Half were answered within{' '}
         {formatNumber(total.p50, 1)} ms and 95% within {formatNumber(total.p95, 1)} ms, at about {formatNumber(total.rps, 0)} requests per second.
         {total.err > 0 && ' The Failures tab shows what went wrong.'}
+        {ruleFailed && ' A pass/fail rule broke, see below.'}
       </p>
+    </div>
+  )
+}
+
+/** Compact list of the test's pass/fail rules with their outcome, shown once the run has a verdict. */
+function ThresholdsBlock({ results }: { results: ThresholdResult[] }) {
+  const broken = results.filter((r) => !r.passed).length
+  return (
+    <div className="grid gap-2 rounded-lg border px-4 py-3">
+      <p className="text-sm font-medium">
+        Pass/fail rules{' '}
+        {broken > 0 ? (
+          <span className="text-destructive">
+            Failed: {broken} of {results.length} rule{results.length === 1 ? '' : 's'} broken
+          </span>
+        ) : (
+          <span className="font-normal text-muted-foreground">all {results.length} passed</span>
+        )}
+      </p>
+      <ul className="grid gap-1.5">
+        {results.map((r, i) => (
+          <li key={i} className="flex items-start gap-2 text-sm">
+            {r.passed ? <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /> : <CircleXIcon className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />}
+            <span className={cn(!r.passed && 'text-destructive')}>{resultSentence(r)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

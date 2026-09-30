@@ -139,3 +139,59 @@ func TestRunLifecycle(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// TestRunThresholdVerdict checks that pass/fail rules decide the verdict of a finished run:
+// an impossible rule fails it, an easy one leaves it passing, and the results ride along in the summary.
+func TestRunThresholdVerdict(t *testing.T) {
+	srv := newTestServer(t, fstest.MapFS{})
+	target := httptest.NewServer(dummy.Handler())
+	defer target.Close()
+	admin := newClient(t, srv.URL)
+	admin.expect("POST", "/auth/setup", `{"username":"admin","password":"password1"}`, 201)
+	p := admin.expect("POST", "/projects", `{"name":"P"}`, 201)
+	e := admin.expect("POST", fmt.Sprintf("/projects/%v/environments", p["id"]), fmt.Sprintf(`{"name":"e","baseUrl":%q}`, target.URL), 201)
+	flow := `{"id":"fast","name":"fast","enabled":true,"weight":1,"steps":[{"id":"fast","name":"fast","enabled":true,"method":"GET","url":"/fast",
+		"body":{"type":"none"},"timeoutMs":5000,"followRedirects":true}]}`
+	load := `{"stages":[{"durationSec":1,"target":2},{"durationSec":1,"target":2}]}`
+
+	mkTest := func(thresholds string) float64 {
+		body := fmt.Sprintf(`{"name":"T","environmentId":%v,"flows":[%s],"load":%s,"thresholds":%s}`, e["id"], flow, load, thresholds)
+		return admin.expect("POST", fmt.Sprintf("/projects/%v/tests", p["id"]), body, 201)["id"].(float64)
+	}
+	runAndWait := func(testID float64) map[string]any {
+		run := admin.expect("POST", fmt.Sprintf("/tests/%v/runs", testID), `{}`, 201)
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			r := admin.expect("GET", fmt.Sprintf("/runs/%v", run["id"]), "", 200)
+			if r["status"] == "finished" {
+				return r
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("run did not finish: %v", r)
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	// An impossible rule: average response time can never be negative.
+	failing := mkTest(`[{"id":"r1","metric":"avg_ms","op":"<","value":-1}]`)
+	r := runAndWait(failing)
+	if r["verdict"] != "fail" {
+		t.Errorf("verdict %v, want fail", r["verdict"])
+	}
+	results, _ := r["summary"].(map[string]any)["thresholds"].([]any)
+	if len(results) != 1 {
+		t.Fatalf("summary thresholds %v", r["summary"])
+	}
+	rule := results[0].(map[string]any)
+	if rule["passed"] != false || rule["metric"] != "avg_ms" {
+		t.Errorf("threshold result %v", rule)
+	}
+
+	// An easy rule: RPS is never negative.
+	passing := mkTest(`[{"id":"r1","metric":"rps","op":">=","value":0}]`)
+	r = runAndWait(passing)
+	if r["verdict"] != "pass" {
+		t.Errorf("verdict %v, want pass", r["verdict"])
+	}
+}
