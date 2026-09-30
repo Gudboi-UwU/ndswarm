@@ -203,7 +203,7 @@ function Builder({ saved }: { saved: Test }) {
               Requests
             </TabsTrigger>
             <TabsTrigger value="load" className={cn((hasErrorUnder(shownErrors, 'load') || hasErrorUnder(shownErrors, 'thresholds')) && 'text-destructive')}>
-              Load
+              Load & rules{draft.thresholds.length > 0 && <span className="ml-1 text-muted-foreground">({draft.thresholds.length})</span>}
             </TabsTrigger>
             <TabsTrigger value="settings" className={cn(hasErrorUnder(shownErrors, 'settings') && 'text-destructive')}>
               Options

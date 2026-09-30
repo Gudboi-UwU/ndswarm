@@ -150,6 +150,53 @@ function duration(sec: number): string {
   return s ? `${m} min ${s} s` : `${m} minute${m === 1 ? '' : 's'}`
 }
 
+// Sensible starting point per metric, kept when only the value is edited but reset when the
+// metric changes (a leftover "1" from "failed at most 1%" makes no sense as "p95 at most 1 ms").
+const METRIC_DEFAULTS: Record<ThresholdMetric, { value: number; op: ThresholdOp }> = {
+  failed_pct: { value: 1, op: '<=' },
+  avg_ms: { value: 500, op: '<=' },
+  p95_ms: { value: 500, op: '<=' },
+  p99_ms: { value: 500, op: '<=' },
+  max_ms: { value: 500, op: '<=' },
+  rps: { value: 10, op: '>=' },
+}
+
+/**
+ * A number input that keeps whatever the user is typing as text, so an empty or half-typed
+ * value (e.g. "0.") does not collapse to 0. It commits upstream as soon as the text parses.
+ */
+function ThresholdValueInput({ value, onCommit, ariaLabel, invalid, readOnly }: { value: number; onCommit: (v: number) => void; ariaLabel: string; invalid?: boolean; readOnly?: boolean }) {
+  // Tracks the committed value alongside the raw text, so an external change (switching metric,
+  // undo) resets the text, but typing does not get overwritten by the round trip through onCommit.
+  const [state, setState] = useState(() => ({ value, text: String(value) }))
+  if (state.value !== value) setState({ value, text: String(value) })
+  const n = Number(state.text)
+  const bad = state.text.trim() === '' || !Number.isFinite(n)
+  return (
+    <div className="grid gap-1">
+      <Input
+        aria-label={ariaLabel}
+        type="number"
+        className="font-mono"
+        value={state.text}
+        aria-invalid={invalid || bad ? true : undefined}
+        readOnly={readOnly}
+        onChange={(e) => {
+          const text = e.target.value
+          const num = Number(text)
+          if (text.trim() !== '' && Number.isFinite(num)) {
+            setState({ value: num, text })
+            onCommit(num)
+          } else {
+            setState((s) => ({ ...s, text }))
+          }
+        }}
+      />
+      {bad && <p className="text-xs text-destructive">Enter a number.</p>}
+    </div>
+  )
+}
+
 /**
  * Rules checked once against the run's final totals when it finishes; any broken rule marks
  * the whole run failed, even if every request got a response.
@@ -157,6 +204,7 @@ function duration(sec: number): string {
 export function ThresholdsEditor({ thresholds, onChange }: { thresholds: Threshold[]; onChange: (t: Threshold[]) => void }) {
   const { errors, readOnly } = useBuilder()
   const update = (i: number, patch: Partial<Threshold>) => onChange(thresholds.map((t, j) => (j === i ? { ...t, ...patch } : t)))
+  const setMetric = (i: number, metric: ThresholdMetric) => update(i, { metric, ...METRIC_DEFAULTS[metric] })
   const remove = (i: number) => onChange(thresholds.filter((_, j) => j !== i))
   const add = () => onChange([...thresholds, { id: uid(), metric: 'failed_pct', op: '<=', value: 1 }])
 
@@ -180,7 +228,7 @@ export function ThresholdsEditor({ thresholds, onChange }: { thresholds: Thresho
           return (
             <div key={t.id} className="grid gap-1">
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_6rem_auto] sm:items-center">
-                <Select value={t.metric} onValueChange={(v) => update(i, { metric: v as ThresholdMetric })} disabled={readOnly}>
+                <Select value={t.metric} onValueChange={(v) => setMetric(i, v as ThresholdMetric)} disabled={readOnly}>
                   <SelectTrigger aria-label={`Rule ${i + 1} metric`} className="w-full">
                     <SelectValue />
                   </SelectTrigger>
@@ -205,15 +253,7 @@ export function ThresholdsEditor({ thresholds, onChange }: { thresholds: Thresho
                       ))}
                     </SelectContent>
                   </Select>
-                  <Input
-                    aria-label={`Rule ${i + 1} value`}
-                    type="number"
-                    className="font-mono"
-                    value={t.value}
-                    aria-invalid={err ? true : undefined}
-                    readOnly={readOnly}
-                    onChange={(e) => update(i, { value: Number(e.target.value) })}
-                  />
+                  <ThresholdValueInput ariaLabel={`Rule ${i + 1} value`} value={t.value} invalid={!!err} readOnly={readOnly} onCommit={(value) => update(i, { value })} />
                   <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove rule ${i + 1}`} disabled={readOnly} onClick={() => remove(i)}>
                     <XIcon />
                   </Button>
