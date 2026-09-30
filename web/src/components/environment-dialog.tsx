@@ -34,6 +34,8 @@ export function EnvironmentDialog({
     mutationFn: () => (env ? api<Environment>('PUT', `/environments/${env.id}`, draft) : api<Environment>('POST', `/projects/${projectId}/environments`, draft)),
     onSuccess: async (e) => {
       await queryClient.invalidateQueries({ queryKey: keys.environments(projectId) })
+      // The project's tests show this server's address, so they need refreshing too.
+      await queryClient.invalidateQueries({ queryKey: keys.tests(projectId) })
       toast.success(env ? `Saved ${e.name}` : `Created ${e.name}`)
       onOpenChange(false)
     },
@@ -65,7 +67,7 @@ export function EnvironmentDialog({
               value={draft.baseUrl}
               onChange={(e) => set({ baseUrl: e.target.value })}
               error={err?.field('baseUrl')}
-              hint="Endpoint paths like /orders are joined to this."
+              hint="Request paths like /orders are joined to this."
             />
           </div>
 
@@ -79,7 +81,7 @@ export function EnvironmentDialog({
           />
           <PairList
             title="Default headers"
-            hint="Sent with every request. A step can override them."
+            hint="Sent with every request. A request can override them."
             keyLabel="Header"
             items={draft.headers}
             onChange={(headers) => set({ headers })}
@@ -151,16 +153,16 @@ function PairList({
       <legend className="text-sm font-medium">{title}</legend>
       <p className="text-sm text-muted-foreground">{hint}</p>
       {items.length > 0 && (
-        <div className="grid grid-cols-[1fr_1.4fr_auto_auto] items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span>{keyLabel}</span>
-          <span>Value</span>
-          <span>Secret</span>
-          <span aria-hidden="true" />
+        <div className="grid gap-3 sm:grid-cols-[1fr_1.4fr_auto_auto] sm:items-center sm:gap-x-2 sm:gap-y-1">
+          <span className="hidden text-xs text-muted-foreground sm:block">{keyLabel}</span>
+          <span className="hidden text-xs text-muted-foreground sm:block">Value</span>
+          <span className="hidden text-xs text-muted-foreground sm:block">Secret</span>
+          <span aria-hidden="true" className="hidden sm:block" />
           {items.map((it, i) => {
             const keyErr = errorAt(i, 'key')
             const valErr = errorAt(i, 'value')
             return (
-              <div key={i} className="contents">
+              <div key={i} className="grid gap-2 rounded-md border p-3 sm:contents sm:border-0 sm:p-0">
                 <Input aria-label={`${keyLabel} ${i + 1}`} value={it.key} aria-invalid={keyErr ? true : undefined} onChange={(e) => update(i, { key: e.target.value })} />
                 <Input
                   aria-label={`Value ${i + 1}`}
@@ -169,11 +171,16 @@ function PairList({
                   aria-invalid={valErr ? true : undefined}
                   onChange={(e) => update(i, { value: e.target.value })}
                 />
-                <Switch aria-label={`Secret ${i + 1}`} checked={it.secret} onCheckedChange={(secret) => update(i, { secret })} />
-                <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${it.key || 'row'}`} onClick={() => onChange(items.filter((_, j) => j !== i))}>
-                  <XIcon />
-                </Button>
-                {(keyErr || valErr) && <p className="col-span-4 text-sm text-destructive">{keyErr ?? valErr}</p>}
+                <div className="flex items-center justify-between gap-2 sm:contents">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground sm:contents">
+                    <Switch aria-label={`Secret ${i + 1}`} checked={it.secret} onCheckedChange={(secret) => update(i, { secret })} />
+                    <span className="sm:hidden">Secret</span>
+                  </label>
+                  <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${it.key || 'row'}`} onClick={() => onChange(items.filter((_, j) => j !== i))}>
+                    <XIcon />
+                  </Button>
+                </div>
+                {(keyErr || valErr) && <p className="text-sm text-destructive sm:col-span-4">{keyErr ?? valErr}</p>}
               </div>
             )
           })}
