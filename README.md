@@ -129,14 +129,20 @@ Requires Go 1.27, Node 26 and Docker.
 
 ## Releases
 
-Work lands on the `dev` branch. Every push to `dev` runs the checks (`make check`, the Helm
-lint, the browser e2e test); when they pass, CI tags the commit with the next version and
-publishes it:
+There are three branches. Every push runs the checks (`make check`, the Helm lint, the browser
+e2e test); when they pass, CI tags the commit and publishes it, depending on the branch:
 
-- the image `ghcr.io/gudboi-uwu/ndswarm:<version>` and `:latest`, for amd64 and arm64,
-- a GitHub Release with notes, offline bundles per architecture and the Helm chart.
+| Branch | Tag | Image tags (amd64 + arm64) | GitHub |
+|---|---|---|---|
+| `dev` | `vX.Y.Z-dev.N` | `:X.Y.Z-dev.N`, `:dev` | none |
+| `staging` | `vX.Y.Z-rc.N` | `:X.Y.Z-rc.N`, `:staging` | pre-release with bundles and Helm chart |
+| `main` | `vX.Y.Z` | `:X.Y.Z`, `:latest` | release with bundles and Helm chart |
 
-The next version is the patch after the latest tag (0.4.3 becomes 0.4.4). For a bigger step,
-set `version` and `appVersion` in `deploy/helm/ndswarm/Chart.yaml` (for example to 0.5.0) in
-the same push; that version is used instead. Pushing a tag `vX.Y.Z` by hand also releases.
-`main` and pull requests run the checks only.
+Images live at `ghcr.io/gudboi-uwu/ndswarm`. X.Y.Z is the next release: the patch after the
+latest final tag (0.4.6 becomes 0.4.7). For a bigger step, set `version` and `appVersion` in
+`deploy/helm/ndswarm/Chart.yaml` (for example to 0.5.0) in the same push. Pushing a tag by
+hand also publishes it; its suffix (`-dev.N`, `-rc.N`, none) picks the channel.
+
+Flow: work that passes the checks locally goes to `dev`. When a set of changes is finished and
+worth a new version, merge `dev` into `staging` to get a release candidate, then `staging` into
+`main` for the release. Pull requests run the checks only.

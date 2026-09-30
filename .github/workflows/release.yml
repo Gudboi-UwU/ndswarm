@@ -1,8 +1,10 @@
 name: release
 
-# Publishes a version: multi-arch image on GHCR, a GitHub Release with notes, offline bundles
-# (amd64, arm64) and the Helm chart. Runs from a green dev push (called by ci.yml, which tags
-# the commit) or from a tag pushed by hand.
+# Publishes a version as a multi-arch image on GHCR. Channels (see ci.yml):
+#   dev     -> image :<version> and :dev only
+#   staging -> image :<version> and :staging, GitHub pre-release with bundles and Helm chart
+#   release -> image :<version> and :latest, GitHub Release with bundles and Helm chart
+# Runs from ci.yml after a green push (it tags the commit) or from a tag pushed by hand.
 on:
   push:
     tags: ["v*"]
@@ -10,6 +12,10 @@ on:
     inputs:
       version:
         description: Version to publish, without the v (the tag must exist)
+        type: string
+        required: true
+      channel:
+        description: dev, staging or release
         type: string
         required: true
 
@@ -29,13 +35,19 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.version && format('v{0}', inputs.version) || github.ref }}
 
-      - name: Version
+      - name: Version and channel
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
         run: |
           version="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "Publishing ndswarm $version" >> "$GITHUB_STEP_SUMMARY"
+          channel="$INPUT_CHANNEL"
+          if [ -z "$channel" ]; then # a tag pushed by hand: the suffix says which channel
+            case "$version" in *-dev.*) channel=dev ;; *-rc.*) channel=staging ;; *) channel=release ;; esac
+          fi
+          case "$channel" in dev) float=dev ;; staging) float=staging ;; *) float=latest ;; esac
+          { echo "VERSION=$version"; echo "CHANNEL=$channel"; echo "FLOAT_TAG=$float"; } >> "$GITHUB_ENV"
+          echo "Publishing ndswarm $version ($channel)" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: docker/setup-buildx-action@v4
 
@@ -55,7 +67,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ env.VERSION }}
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ env.FLOAT_TAG }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ env.VERSION }}
@@ -63,6 +75,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Offline bundles
+        if: env.CHANNEL != 'dev'
         run: |
           mkdir -p dist
           for arch in amd64 arm64; do
@@ -74,9 +87,11 @@ jobs:
           done
 
       - name: Helm chart
+        if: env.CHANNEL != 'dev'
         run: docker run --rm -v "$PWD:/w" -w /w alpine/helm:3.19.0 package deploy/helm/ndswarm -d dist --version "$VERSION" --app-version "$VERSION"
 
       - name: Publish the release
+        if: env.CHANNEL != 'dev'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -91,5 +106,6 @@ jobs:
           (\`linux-amd64\` for Intel/AMD, \`linux-arm64\` for ARM servers and Apple Silicon),
           unpack it and follow \`CARA-PAKAI.txt\`.
           NOTES
-          gh release create "v$VERSION" --title "ndswarm $VERSION" --notes-file notes.md --generate-notes --verify-tag \
+          pre=; [ "$CHANNEL" = staging ] && pre=--prerelease
+          gh release create "v$VERSION" --title "ndswarm $VERSION" --notes-file notes.md --generate-notes --verify-tag $pre \
             "dist/ndswarm-$VERSION-linux-amd64-bundle.tar.gz" "dist/ndswarm-$VERSION-linux-arm64-bundle.tar.gz" "dist/ndswarm-$VERSION.tgz"
