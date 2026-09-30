@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { EllipsisIcon } from 'lucide-react'
 import { useState } from 'react'
 import { api, errorMessage } from '@/api/client'
 import type { ErrorsView, RunKey } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatElapsed, formatNumber } from '@/lib/format'
@@ -69,15 +71,22 @@ export function ErrorsTab({ runId, keys: runKeys, live, onShowLogs }: { runId: n
                 <TableCell className="font-mono text-xs text-muted-foreground tabular-nums">
                   {formatElapsed(g.firstSec)} to {formatElapsed(g.lastSec)}
                 </TableCell>
-                <TableCell className="text-right">
-                  {g.exampleLogId && (
-                    <Button variant="ghost" size="sm" onClick={() => setExample(g.exampleLogId)}>
-                      Show one
-                    </Button>
-                  )}
+                <TableCell className="text-right whitespace-nowrap">
                   <Button variant="ghost" size="sm" onClick={() => onShowLogs(g.category, g.keyId)}>
                     All in log
                   </Button>
+                  {g.exampleLogId && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon-sm" aria-label="More actions">
+                          <EllipsisIcon />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => setExample(g.exampleLogId)}>Show one</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

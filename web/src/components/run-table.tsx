@@ -1,11 +1,11 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { HistoryIcon } from 'lucide-react'
+import { HistoryIcon, XIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { api, errorMessage } from '@/api/client'
+import { api } from '@/api/client'
 import { keys } from '@/api/keys'
-import type { Project, Run } from '@/api/types'
-import { EmptyState } from '@/components/page'
+import type { Project, Run, Test } from '@/api/types'
+import { EmptyState, ErrorState } from '@/components/page'
 import { Help, SortButton } from '@/components/table-help'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -133,6 +133,7 @@ export function RunsView({ projectId }: { projectId?: number }) {
   const grouped = !projectId && params.get('group') !== 'off'
   const [sort, setSort] = useState<SortState<SortKey>>({ key: 'id', dir: 'desc' })
   const projects = useQuery({ queryKey: keys.projects, queryFn: () => api<Project[]>('GET', '/projects'), enabled: !projectId })
+  const filterTest = useQuery({ queryKey: keys.test(Number(testId)), queryFn: () => api<Test>('GET', `/tests/${testId}`), enabled: !!testId })
   const runs = useInfiniteQuery({
     queryKey: ['runs', 'history', result, project, testId],
     queryFn: ({ pageParam }) => api<Run[]>('GET', `/runs?limit=${PAGE}&result=${result}&projectId=${project}&testId=${testId}&before=${pageParam}`),
@@ -199,6 +200,14 @@ export function RunsView({ projectId }: { projectId?: number }) {
             Group by project
           </label>
         )}
+        {testId && (
+          <Badge variant="secondary" className="h-8 gap-1">
+            Test: {filterTest.data?.name ?? `#${testId}`}
+            <button type="button" aria-label="Clear test filter" onClick={() => set('testId', '')}>
+              <XIcon className="size-3" />
+            </button>
+          </Badge>
+        )}
         {filtered && (
           <Button variant="ghost" onClick={() => setParams({}, { replace: true })}>
             Clear filters
@@ -209,9 +218,23 @@ export function RunsView({ projectId }: { projectId?: number }) {
       {runs.isPending ? (
         <Skeleton className="h-64" />
       ) : runs.isError ? (
-        <p className="text-sm text-destructive">{errorMessage(runs.error)}</p>
+        <ErrorState error={runs.error} onRetry={() => void runs.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState icon={<HistoryIcon />} title={filtered ? 'No runs match' : 'No runs yet'}>
+        <EmptyState
+          icon={<HistoryIcon />}
+          title={filtered ? 'No runs match' : 'No runs yet'}
+          action={
+            filtered ? (
+              <Button variant="outline" size="sm" onClick={() => setParams({}, { replace: true })}>
+                Clear filters
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" asChild>
+                <Link to="/projects">Open projects</Link>
+              </Button>
+            )
+          }
+        >
           {filtered ? 'Try another filter, or clear the filters.' : 'Open a test and press Run test. Every run is listed here with its results.'}
         </EmptyState>
       ) : grouped ? (

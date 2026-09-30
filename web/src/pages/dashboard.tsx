@@ -6,9 +6,9 @@ import { NewTestDialog } from '@/components/new-test-dialog'
 import { HelpIcon } from '@/components/table-help'
 import { glossary } from '@/lib/glossary'
 import { Link } from 'react-router'
-import { api, errorMessage } from '@/api/client'
+import { api } from '@/api/client'
 import type { Dashboard, DashboardStat } from '@/api/types'
-import { PageHeader } from '@/components/page'
+import { ErrorState, PageHeader, useTitle } from '@/components/page'
 import { RunStatus, RunTable } from '@/components/run-table'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -18,8 +18,9 @@ export function DashboardPage() {
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: () => api<Dashboard>('GET', '/dashboard'), refetchInterval: 3000 })
   const { data: me } = useMe()
   const [creating, setCreating] = useState(false)
+  useTitle('Home')
   if (dash.isPending) return <Skeleton className="h-64 max-w-6xl" />
-  if (dash.isError) return <p className="text-sm text-destructive">{errorMessage(dash.error)}</p>
+  if (dash.isError) return <ErrorState error={dash.error} onRetry={() => void dash.refetch()} />
   const d = dash.data
   const live = d.active?.live
 
@@ -84,7 +85,13 @@ export function DashboardPage() {
           )}
         </div>
         {d.recent.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Finished runs appear here.</p>        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-muted-foreground">Finished runs appear here.</p>
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/projects">Open projects</Link>
+            </Button>
+          </div>
+        ) : (
           <RunTable runs={d.recent} />
         )}
       </section>
