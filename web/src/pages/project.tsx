@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { CopyIcon, EllipsisIcon, FileUpIcon, FlaskConicalIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from 'lucide-react'
+import { CopyIcon, DownloadIcon, EllipsisIcon, FileUpIcon, FlaskConicalIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -8,13 +8,20 @@ import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
 import type { Environment, Project, Test, TestSummary } from '@/api/types'
 import { EnvironmentDialog } from '@/components/environment-dialog'
-import { ExportMenu } from '@/components/export-menu'
 import { ImportDialog } from '@/components/import-dialog'
 import { RunsView } from '@/components/run-table'
 import { NewTestDialog } from '@/components/new-test-dialog'
-import { ConfirmDelete, EmptyState, PageHeader } from '@/components/page'
+import { ConfirmDelete, EmptyState, ErrorState, PageHeader, useTitle } from '@/components/page'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -46,39 +53,76 @@ export function ProjectPage() {
     onError: (e) => toast.error(errorMessage(e)),
   })
 
+  useTitle(project.data?.name, 'Project')
   if (project.error instanceof ApiError && project.error.status === 404) return <NotFoundPage />
   if (project.isPending) return <Skeleton className="h-48 max-w-5xl" />
-  if (project.isError) return <p className="text-sm text-destructive">{errorMessage(project.error)}</p>
+  if (project.isError) return <ErrorState error={project.error} onRetry={() => void project.refetch()} />
   const p = project.data
 
   return (
     <div className="max-w-6xl">
       <PageHeader
-        back={<Link to="/projects" className="hover:text-foreground">Projects</Link>}
+        back={
+          <>
+            <Link to="/projects" className="hover:text-foreground">Projects</Link>
+            {' / '}
+            {p.name}
+          </>
+        }
         title={p.name}
         description={p.description || undefined}
         actions={
           <>
-            <ExportMenu path={`/projects/${id}`} />
             {canEdit && (
-              <>
-                <Button variant="ghost" onClick={() => setImporting(true)}>
-                  <FileUpIcon />
-                  Import
-                </Button>
-                <Button variant="ghost" onClick={() => setEditing(true)}>
-                  <PencilIcon />
-                  Rename
-                </Button>
-                <Button variant="ghost" aria-label="Delete project" onClick={() => setDeleting(true)}>
-                  <Trash2Icon />
-                </Button>
-                <Button onClick={() => setCreating(true)}>
-                  <PlusIcon />
-                  New test
-                </Button>
-              </>
+              <Button onClick={() => setCreating(true)}>
+                <PlusIcon />
+                New test
+              </Button>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" aria-label="More actions">
+                  <EllipsisIcon />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canEdit && (
+                  <DropdownMenuItem onSelect={() => setImporting(true)}>
+                    <FileUpIcon />
+                    Import
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <DropdownMenuItem onSelect={() => setEditing(true)}>
+                    <PencilIcon />
+                    Rename
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <DownloadIcon />
+                    Export
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem asChild>
+                      <a href={`/api/v1/projects/${id}/export?format=ndswarm&type=json`} download>ndswarm file (.json)</a>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <a href={`/api/v1/projects/${id}/export?format=ndswarm&type=yaml`} download>ndswarm file (.yaml)</a>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <a href={`/api/v1/projects/${id}/export?format=postman`} download>Postman collection</a>
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+                {canEdit && (
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+                    <Trash2Icon />
+                    Delete project
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         }
       />
@@ -107,7 +151,9 @@ export function ProjectPage() {
         title={`Delete ${p.name}?`}
         description={`Its ${p.testCount} test(s), their runs and all servers are deleted too. This cannot be undone.`}
         confirm="Delete project"
+        pendingLabel="Deleting"
         pending={remove.isPending}
+        error={remove.error}
         onConfirm={() => remove.mutate()}
         onCancel={() => setDeleting(false)}
       />
@@ -139,15 +185,17 @@ function TestsTab({ projectId, canEdit, onNew }: { projectId: number; canEdit: b
   })
 
   if (tests.isPending) return <Skeleton className="h-32 w-full" />
-  if (tests.isError) return <p className="text-sm text-destructive">{errorMessage(tests.error)}</p>
+  if (tests.isError) return <ErrorState error={tests.error} onRetry={() => void tests.refetch()} />
   if (tests.data.length === 0) {
     return (
       <EmptyState
         icon={<FlaskConicalIcon />}
         title="No tests in this project yet"
         action={
+          // The page header already has the primary "New test" button; this one stays secondary
+          // so there is exactly one obvious next step on screen.
           canEdit && (
-            <Button onClick={onNew}>
+            <Button variant="outline" onClick={onNew}>
               <PlusIcon />
               New test
             </Button>
@@ -202,7 +250,9 @@ function TestsTab({ projectId, canEdit, onNew }: { projectId: number; canEdit: b
         title={`Delete ${deleting?.name}?`}
         description="The test and its requests are removed. Its past runs stay in the run history. This cannot be undone."
         confirm="Delete test"
+        pendingLabel="Deleting"
         pending={remove.isPending}
+        error={remove.error}
         onConfirm={() => deleting && remove.mutate(deleting)}
         onCancel={() => setDeleting(null)}
       />
@@ -221,18 +271,20 @@ function EnvironmentsTab({ projectId, envs, canEdit }: { projectId: number; envs
       setDeleting(null)
       await queryClient.invalidateQueries({ queryKey: keys.environments(projectId) })
       await queryClient.invalidateQueries({ queryKey: keys.tests(projectId) })
+      await queryClient.invalidateQueries({ queryKey: keys.projects })
     },
     onError: (e) => toast.error(errorMessage(e)),
   })
+  // Outline, not the default variant: the page's one primary button is "New test" in the header.
   const newButton = canEdit && (
-    <Button onClick={() => setEditing('new')}>
+    <Button variant="outline" onClick={() => setEditing('new')}>
       <PlusIcon />
       New server
     </Button>
   )
 
   if (envs.isPending) return <Skeleton className="h-32 w-full" />
-  if (envs.isError) return <p className="text-sm text-destructive">{errorMessage(envs.error)}</p>
+  if (envs.isError) return <ErrorState error={envs.error} onRetry={() => void envs.refetch()} />
   return (
     <>
       {envs.data.length === 0 ? (
@@ -242,12 +294,12 @@ function EnvironmentsTab({ projectId, envs, canEdit }: { projectId: number; envs
       ) : (
         <>
           <div className="mb-3 flex justify-end">{newButton}</div>
-          <div className="rounded-lg border">
+          <div className="overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Base URL</TableHead>
+                  <TableHead>Server address</TableHead>
                   <TableHead className="hidden w-28 text-right sm:table-cell">Variables</TableHead>
                   {canEdit && <TableHead className="w-24"><span className="sr-only">Actions</span></TableHead>}
                 </TableRow>
@@ -287,7 +339,9 @@ function EnvironmentsTab({ projectId, envs, canEdit }: { projectId: number; envs
         title={`Delete ${deleting?.name}?`}
         description="Tests that use it keep working with full URLs only, until you pick another server."
         confirm="Delete server"
+        pendingLabel="Deleting"
         pending={remove.isPending}
+        error={remove.error}
         onConfirm={() => deleting && remove.mutate(deleting)}
         onCancel={() => setDeleting(null)}
       />
