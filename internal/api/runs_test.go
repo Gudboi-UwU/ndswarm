@@ -173,8 +173,8 @@ func TestRunThresholdVerdict(t *testing.T) {
 		}
 	}
 
-	// An impossible rule: average response time can never be negative.
-	failing := mkTest(`[{"id":"r1","metric":"avg_ms","op":"<","value":-1}]`)
+	// An impossible rule: average response time is never below zero.
+	failing := mkTest(`[{"id":"r1","metric":"avg_ms","op":"<","value":0}]`)
 	r := runAndWait(failing)
 	if r["verdict"] != "fail" {
 		t.Errorf("verdict %v, want fail", r["verdict"])

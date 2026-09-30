@@ -1,6 +1,9 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // MaxThresholds caps how many pass/fail rules one test can define.
 const MaxThresholds = 20
@@ -27,5 +30,10 @@ func validateThresholds(v *ValidationError, ts []Threshold) {
 		ids[th.ID] = true
 		v.Check(thresholdMetrics[th.Metric], p+".metric", "Choose a metric.")
 		v.Check(thresholdOps[th.Op], p+".op", "Choose <, <=, > or >=.")
+		finite := !math.IsNaN(th.Value) && !math.IsInf(th.Value, 0)
+		v.Check(finite && th.Value >= 0, p+".value", "Use a number 0 or greater.")
+		if finite && th.Metric == "failed_pct" {
+			v.Check(th.Value <= 100, p+".value", "Use at most 100.")
+		}
 	}
 }

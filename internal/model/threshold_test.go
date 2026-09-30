@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -29,6 +30,10 @@ func TestValidateThresholds(t *testing.T) {
 	if got := paths(ok); len(got) != 0 {
 		t.Errorf("valid rule rejected: %v", got)
 	}
+	ok2 := base(Threshold{ID: "a", Metric: "failed_pct", Op: "<=", Value: 100}, Threshold{ID: "b", Metric: "avg_ms", Op: "<", Value: 5000})
+	if got := paths(ok2); len(got) != 0 {
+		t.Errorf("valid rules rejected: %v", got)
+	}
 
 	cases := []struct {
 		name string
@@ -39,6 +44,10 @@ func TestValidateThresholds(t *testing.T) {
 		{"duplicate id", base(Threshold{ID: "a", Metric: "avg_ms", Op: "<", Value: 1}, Threshold{ID: "a", Metric: "rps", Op: ">", Value: 1}), "thresholds.1.id"},
 		{"bad metric", base(Threshold{ID: "a", Metric: "bogus", Op: "<", Value: 1}), "thresholds.0.metric"},
 		{"bad op", base(Threshold{ID: "a", Metric: "avg_ms", Op: "~=", Value: 1}), "thresholds.0.op"},
+		{"negative value", base(Threshold{ID: "a", Metric: "avg_ms", Op: "<", Value: -1}), "thresholds.0.value"},
+		{"NaN value", base(Threshold{ID: "a", Metric: "avg_ms", Op: "<", Value: math.NaN()}), "thresholds.0.value"},
+		{"Inf value", base(Threshold{ID: "a", Metric: "avg_ms", Op: "<", Value: math.Inf(1)}), "thresholds.0.value"},
+		{"failed_pct over 100", base(Threshold{ID: "a", Metric: "failed_pct", Op: "<", Value: 101}), "thresholds.0.value"},
 	}
 	for _, c := range cases {
 		if got := paths(c.tt); !got[c.want] {
