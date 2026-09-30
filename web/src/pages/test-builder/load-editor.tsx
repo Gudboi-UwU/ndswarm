@@ -92,10 +92,19 @@ export function LoadEditor({ load, onChange }: { load: Load; onChange: (l: Load)
 function SimpleLoad({ load, shape, onChange }: { load: Load; shape: { users: number; ramp: number; total: number }; onChange: (l: Load) => void }) {
   const { errors } = useBuilder()
   const [unit, setUnit] = useState<'s' | 'min'>(shape.total >= 120 && shape.total % 60 === 0 ? 'min' : 's')
-  const set = (users: number, ramp: number, total: number) => {
-    users = Math.max(1, Math.round(users) || 1)
-    total = Math.max(2, Math.round(total) || 2)
-    ramp = Math.min(Math.max(1, Math.round(ramp) || 1), total - 1)
+  // Pushes a value upstream as typed, without clamping: clamping on every keystroke is what made
+  // clearing "users" jump to 1 and typing "50" next read as "150". Bounds are only enforced
+  // on blur, by `clamp` below.
+  const setRaw = (patch: Partial<{ users: number; ramp: number; total: number }>) => {
+    const users = patch.users ?? shape.users
+    const ramp = patch.ramp ?? shape.ramp
+    const total = patch.total ?? shape.total
+    onChange({ ...load, stages: [{ durationSec: ramp, target: users }, { durationSec: Math.max(0, total - ramp), target: users }], maxVUs: users })
+  }
+  const clamp = () => {
+    const users = Math.max(1, Math.round(shape.users) || 1)
+    const total = Math.max(2, Math.round(shape.total) || 2)
+    const ramp = Math.min(Math.max(1, Math.round(shape.ramp) || 1), total - 1)
     onChange({ ...load, stages: [{ durationSec: ramp, target: users }, { durationSec: total - ramp, target: users }], maxVUs: users })
   }
   const factor = unit === 'min' ? 60 : 1
@@ -106,30 +115,34 @@ function SimpleLoad({ load, shape, onChange }: { load: Load; shape: { users: num
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="grid gap-2">
           <Label htmlFor="load-users">Simulated users</Label>
-          <Input id="load-users" type="number" min={1} className="font-mono" value={shape.users} aria-invalid={err ? true : undefined} onChange={(e) => set(Number(e.target.value), shape.ramp, shape.total)} />
+          <LoadNumberInput id="load-users" min={1} value={shape.users} invalid={!!err} onCommit={(n) => setRaw({ users: n })} onBlur={clamp} />
           <p className="text-xs text-muted-foreground">Sending requests at the same time.</p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="load-total">Test length</Label>
           <div className="flex gap-2">
-            <Input
+            <LoadNumberInput
               id="load-total"
-              type="number"
               min={1}
-              className="font-mono"
               value={+(shape.total / factor).toFixed(2)}
-              onChange={(e) => set(shape.users, shape.ramp, Number(e.target.value) * factor)}
+              onCommit={(n) => setRaw({ total: n * factor })}
+              onBlur={clamp}
             />
-            <select aria-label="Unit" className="h-8 rounded-lg border bg-transparent px-2 text-sm dark:bg-input/30" value={unit} onChange={(e) => setUnit(e.target.value as 's' | 'min')}>
-              <option value="s">seconds</option>
-              <option value="min">minutes</option>
-            </select>
+            <Select value={unit} onValueChange={(v) => setUnit(v as 's' | 'min')}>
+              <SelectTrigger aria-label="Unit" className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="s">seconds</SelectItem>
+                <SelectItem value="min">minutes</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <p className="text-xs text-muted-foreground">Including the ramp-up.</p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="load-ramp">Ramp-up (seconds)</Label>
-          <Input id="load-ramp" type="number" min={1} className="font-mono" value={shape.ramp} onChange={(e) => set(shape.users, Number(e.target.value), shape.total)} />
+          <LoadNumberInput id="load-ramp" min={1} value={shape.ramp} onCommit={(n) => setRaw({ ramp: n })} onBlur={clamp} />
           <p className="text-xs text-muted-foreground">Users are added gradually, not all at once.</p>
         </div>
       </div>
@@ -140,6 +153,38 @@ function SimpleLoad({ load, shape, onChange }: { load: Load; shape: { users: num
       </p>
       <TimeChart title="Planned users over time" data={[[0, shape.ramp, shape.total], [0, shape.users, shape.users]]} series={PREVIEW} digits={0} height={140} />
     </div>
+  )
+}
+
+/**
+ * A number input that keeps whatever is typed as text while focused, so an in-progress edit
+ * (clearing the field, a half-typed number) is never clobbered by a clamped value from the
+ * parent. `onCommit` fires as soon as the text parses; `onBlur` runs last, for the caller to
+ * enforce bounds (and this always snaps the shown text back to the committed value first, so
+ * an invalid or empty field never stays that way after leaving it).
+ */
+function LoadNumberInput({ id, value, min, invalid, onCommit, onBlur }: { id: string; value: number; min?: number; invalid?: boolean; onCommit: (v: number) => void; onBlur: () => void }) {
+  const [state, setState] = useState(() => ({ value, text: String(value) }))
+  if (state.value !== value) setState({ value, text: String(value) })
+  return (
+    <Input
+      id={id}
+      type="number"
+      min={min}
+      className="font-mono"
+      value={state.text}
+      aria-invalid={invalid ? true : undefined}
+      onChange={(e) => {
+        const text = e.target.value
+        setState((s) => ({ ...s, text }))
+        const n = Number(text)
+        if (text.trim() !== '' && Number.isFinite(n)) onCommit(n)
+      }}
+      onBlur={() => {
+        setState({ value, text: String(value) })
+        onBlur()
+      }}
+    />
   )
 }
 
@@ -190,6 +235,11 @@ function ThresholdValueInput({ value, onCommit, ariaLabel, invalid, readOnly }: 
           } else {
             setState((s) => ({ ...s, text }))
           }
+        }}
+        onBlur={() => {
+          // Leaving the field with invalid or empty text abandons the edit, instead of leaving
+          // that text on screen looking like it was saved.
+          if (bad) setState({ value, text: String(value) })
         }}
       />
       {bad && <p className="text-xs text-destructive">Enter a number.</p>}
@@ -282,8 +332,21 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
   const { errors, readOnly } = useBuilder()
   const [peak, setPeak] = useState(() => Math.max(...load.stages.map((s) => s.target), 10))
   const stages = load.stages
+  // Stages have no id of their own (the server model is just duration + target), so React keys
+  // are tracked here, client-side only, and kept in step with add/remove below. A pattern button
+  // replaces the whole array, so a length mismatch there just gets fresh ids.
+  const [ids, setIds] = useState<string[]>(() => stages.map(() => uid()))
+  if (ids.length !== stages.length) setIds(stages.map(() => uid()))
   const setStages = (next: Stage[]) => onChange({ ...load, stages: next, maxVUs: Math.max(load.maxVUs, ...next.map((s) => s.target)) })
   const update = (i: number, patch: Partial<Stage>) => setStages(stages.map((s, j) => (j === i ? { ...s, ...patch } : s)))
+  const addStage = () => {
+    setIds([...ids, uid()])
+    setStages([...stages, { durationSec: 60, target: stages[stages.length - 1]?.target ?? 1 }])
+  }
+  const removeStage = (i: number) => {
+    setIds(ids.filter((_, j) => j !== i))
+    setStages(stages.filter((_, j) => j !== i))
+  }
 
   let at = 0
   const xs = [0]
@@ -317,7 +380,7 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
           <h3 className="text-sm font-medium">Stages</h3>
           <span className="font-mono text-sm text-muted-foreground">Total {formatElapsed(at)}</span>
         </div>
-        <TimeChart title="Planned virtual users" data={[xs, ys]} series={PREVIEW} digits={0} height={160} />
+        <TimeChart title="Planned simulated users" data={[xs, ys]} series={PREVIEW} digits={0} height={160} />
         {errors.get('load.stages') && <p className="text-sm text-destructive">{errors.get('load.stages')}</p>}
         <div className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 text-sm">
           <span className="text-xs text-muted-foreground">#</span>
@@ -327,7 +390,7 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
           {stages.map((s, i) => {
             const err = errors.get(`load.stages.${i}.durationSec`) ?? errors.get(`load.stages.${i}.target`)
             return (
-              <div key={i} className="contents">
+              <div key={ids[i] ?? i} className="contents">
                 <span className="font-mono text-muted-foreground">{i + 1}</span>
                 <Input
                   aria-label={`Stage ${i + 1} duration`}
@@ -347,7 +410,7 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
                   aria-invalid={errors.get(`load.stages.${i}.target`) ? true : undefined}
                   onChange={(e) => update(i, { target: Number(e.target.value) })}
                 />
-                <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove stage ${i + 1}`} disabled={stages.length === 1} onClick={() => setStages(stages.filter((_, j) => j !== i))}>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove stage ${i + 1}`} disabled={stages.length === 1} onClick={() => removeStage(i)}>
                   <XIcon />
                 </Button>
                 {err && <p className="col-span-4 text-sm text-destructive">{err}</p>}
@@ -357,7 +420,7 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
         </div>
         {!readOnly && (
           <div>
-            <Button type="button" variant="outline" size="sm" onClick={() => setStages([...stages, { durationSec: 60, target: stages[stages.length - 1]?.target ?? 1 }])}>
+            <Button type="button" variant="outline" size="sm" onClick={addStage}>
               <PlusIcon />
               Add stage
             </Button>
@@ -415,13 +478,13 @@ export function SettingsEditor({ settings, onChange }: { settings: HttpSettings;
           onChange={(e) => onChange({ ...settings, logSamplePct: Number(e.target.value) })}
         />
         <p className="text-sm text-muted-foreground">
-          {errors.get('settings.logSamplePct') ?? 'Errors are always logged. Per endpoint and second at most 50 errors, 20 successes and the slowest request are kept.'}
+          {errors.get('settings.logSamplePct') ?? 'Errors are always logged. Per request and second at most 50 errors, 20 successes and the slowest request are kept.'}
         </p>
       </div>
       <div className="grid gap-2">
         <Label htmlFor="ua">User-Agent</Label>
         <Input id="ua" placeholder="ndswarm/<version>" value={settings.userAgent} aria-invalid={errors.get('settings.userAgent') ? true : undefined} onChange={(e) => onChange({ ...settings, userAgent: e.target.value })} />
-        <p className="text-sm text-muted-foreground">{errors.get('settings.userAgent') ?? 'Sent unless an endpoint sets its own header.'}</p>
+        <p className="text-sm text-muted-foreground">{errors.get('settings.userAgent') ?? 'Sent unless a request sets its own header.'}</p>
       </div>
     </div>
   )
