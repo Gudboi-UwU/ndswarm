@@ -10,7 +10,7 @@ import type { Project } from '@/api/types'
 import { FormField } from '@/components/form-field'
 import { ImportDialog } from '@/components/import-dialog'
 import { NewTestDialog } from '@/components/new-test-dialog'
-import { EmptyState, PageHeader } from '@/components/page'
+import { EmptyState, ErrorState, PageHeader, useTitle } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,6 +24,7 @@ export function ProjectsPage() {
   const [newTest, setNewTest] = useState(false)
   const [importing, setImporting] = useState(false)
   const canEdit = !!me?.can.edit
+  useTitle('Projects')
   const actions = canEdit && (
     <>
       <Button variant="ghost" onClick={() => setImporting(true)}>
@@ -47,7 +48,7 @@ export function ProjectsPage() {
       {projects.isPending ? (
         <Skeleton className="h-40 w-full" />
       ) : projects.isError ? (
-        <p className="text-sm text-destructive">{errorMessage(projects.error)}</p>
+        <ErrorState error={projects.error} onRetry={() => void projects.refetch()} />
       ) : projects.data.length === 0 ? (
         <EmptyState icon={<FolderIcon />} title="No projects yet" action={canEdit && <div className="flex flex-wrap gap-2">{actions}</div>}>
           {canEdit

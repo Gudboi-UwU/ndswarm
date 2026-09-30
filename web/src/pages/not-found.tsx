@@ -1,7 +1,9 @@
 import { Link } from 'react-router'
+import { useTitle } from '@/components/page'
 import { Button } from '@/components/ui/button'
 
 export function NotFoundPage() {
+  useTitle('Page not found')
   return (
     <div className="max-w-md">
       <h1 className="text-xl font-semibold">Page not found</h1>

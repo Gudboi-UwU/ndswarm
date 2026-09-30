@@ -64,6 +64,7 @@ const nav = [
 
 export function AppShell() {
   const { data: me } = useMe()
+  const location = useLocation()
   if (!me) return null
   const items = nav.filter((n) => n.show(me))
 
@@ -73,18 +74,22 @@ export function AppShell() {
         <Link to="/" className="px-2 py-1 md:mb-6">
           <Brand />
         </Link>
-        <nav className="flex flex-1 gap-1 md:flex-col">
+        <nav aria-label="Main" className="flex flex-1 gap-1 md:flex-col">
           {items.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}
               end={to === '/'}
+              // /tests/:id belongs to a project, and /runs/:id belongs to a test which belongs
+              // to a project, so both highlight Projects instead of leaving no item active.
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                  isActive && 'bg-sidebar-accent font-medium text-sidebar-foreground',
+                  (isActive || (to === '/projects' && (location.pathname.startsWith('/tests/') || location.pathname.startsWith('/runs/')))) &&
+                    'bg-sidebar-accent font-medium text-sidebar-foreground',
                 )
               }
+              aria-label={label}
             >
               <Icon className="size-4" />
               <span className="hidden sm:inline">{label}</span>
@@ -110,6 +115,7 @@ function ActiveRunLink() {
     <NavLink
       to={`/runs/${id}`}
       className="flex items-center gap-2 rounded-md bg-primary/10 px-2 py-1.5 text-sm font-medium text-primary hover:bg-primary/15 md:mb-2"
+      aria-label={`Run #${id} in progress`}
     >
       <ActivityIcon className="size-4" />
       <span className="hidden sm:inline">Run #{id} in progress</span>

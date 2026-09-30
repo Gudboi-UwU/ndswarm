@@ -43,7 +43,7 @@ export function SortButton<K extends string>({ label, sortKey, sort, onSort, hel
         type="button"
         aria-label={`Sort by ${label}${active ? (sort.dir === 'asc' ? ', ascending' : ', descending') : ''}`}
         onClick={() => onSort({ key: sortKey, dir: active && sort.dir === 'desc' ? 'asc' : 'desc' })}
-        className={cn('rounded p-0.5 hover:bg-muted', active ? 'text-foreground' : 'text-muted-foreground/60')}
+        className={cn('rounded p-0.5 hover:bg-muted', active ? 'text-foreground' : 'text-muted-foreground')}
       >
         <Icon className="size-3.5" />
       </button>

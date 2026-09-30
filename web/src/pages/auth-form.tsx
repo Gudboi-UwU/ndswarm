@@ -6,6 +6,7 @@ import { api, ApiError, errorMessage } from '@/api/client'
 import type { User } from '@/api/types'
 import { FormField } from '@/components/form-field'
 import { Brand, FullPage } from '@/components/full-page'
+import { useTitle } from '@/components/page'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { safeNext } from '@/lib/safe-next'
@@ -36,6 +37,7 @@ export function AuthForm({ endpoint, title, intro, submit, newPassword, footer }
   })
   const err = mutation.error instanceof ApiError ? mutation.error : null
   const formError = mutation.error && !err?.details.length ? errorMessage(mutation.error) : null
+  useTitle(title)
 
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
