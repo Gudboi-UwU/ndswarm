@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
+import { errorMessage } from '@/api/client'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,11 +10,37 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Button } from '@/components/ui/button'
+
+/** Sets the browser tab title to "part · part · ndswarm", most specific first. */
+export function useTitle(...parts: (string | undefined)[]): void {
+  useEffect(() => {
+    document.title = [...parts.filter(Boolean), 'ndswarm'].join(' · ')
+  }, [parts.join('\u0000')]) // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** Message plus a "Try again" button, for a query that failed to load. */
+export function ErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <div className="grid gap-3 rounded-lg border border-dashed p-6">
+      <p className="text-sm text-destructive">{errorMessage(error)}</p>
+      <div>
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 export function PageHeader({ title, description, actions, back }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; back?: ReactNode }) {
   return (
     <header className="mb-8">
-      {back && <div className="mb-3 text-sm text-muted-foreground">{back}</div>}
+      {back && (
+        <nav aria-label="Breadcrumb" className="mb-3 text-sm text-muted-foreground">
+          {back}
+        </nav>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-semibold tracking-tight">{title}</h1>
@@ -42,7 +69,9 @@ export function ConfirmDelete({
   title,
   description,
   confirm,
+  pendingLabel,
   pending,
+  error,
   onConfirm,
   onCancel,
 }: {
@@ -50,7 +79,9 @@ export function ConfirmDelete({
   title: string
   description: string
   confirm: string
+  pendingLabel?: string
   pending?: boolean
+  error?: unknown
   onConfirm: () => void
   onCancel: () => void
 }) {
@@ -61,10 +92,20 @@ export function ConfirmDelete({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {error != null && <p className="text-sm text-destructive">{errorMessage(error)}</p>}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" disabled={pending} onClick={onConfirm}>
-            {confirm}
+          <AlertDialogAction
+            variant="destructive"
+            disabled={pending}
+            onClick={(e) => {
+              // AlertDialogAction closes the dialog on click by default; prevent that so a
+              // pending mutation (and its error, shown above) stays visible until it succeeds.
+              e.preventDefault()
+              onConfirm()
+            }}
+          >
+            {pending ? (pendingLabel ?? confirm) : confirm}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
