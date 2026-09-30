@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
@@ -40,37 +40,51 @@ export function NewTestDialog({ open, onOpenChange, projectId }: { open: boolean
   const withBaseUrl = targets.data?.filter((t) => t.baseUrl) ?? []
   const chosenTarget = target || (withBaseUrl[0] ? String(withBaseUrl[0].id) : NEW_URL)
 
+  // Remembers what a previous, failed attempt already created, so retrying after an error
+  // reuses that project/server instead of creating a duplicate each time.
+  const created = useRef<{ projectId?: number; environmentId?: number }>({})
+
   const create = useMutation({
     mutationFn: async () => {
-      let pid = Number(chosenProject)
-      if (!pid) pid = (await api<Project>('POST', '/projects', { name: DEFAULT_PROJECT, description: '' })).id
+      let pid = created.current.projectId ?? Number(chosenProject)
+      if (!pid) {
+        pid = (await api<Project>('POST', '/projects', { name: DEFAULT_PROJECT, description: '' })).id
+        created.current.projectId = pid
+      }
       let envId: number
       if (chosenTarget === NEW_URL) {
-        const base = url.trim().replace(/\/+$/, '')
-        let host = base
-        try {
-          host = new URL(base).host
-        } catch {
-          setUrlError('Enter the full address, like https://api.example.com')
-          throw new Error('invalid url')
+        if (created.current.environmentId) {
+          envId = created.current.environmentId
+        } else {
+          const base = url.trim().replace(/\/+$/, '')
+          let host = base
+          try {
+            host = new URL(base).host
+          } catch {
+            setUrlError('Enter the full address, like https://api.example.com')
+            throw new Error('invalid url')
+          }
+          envId = (await api<Environment>('POST', `/projects/${pid}/environments`, { name: host, baseUrl: base, variables: [], headers: [], auth: { type: 'none' } })).id
+          created.current.environmentId = envId
         }
-        envId = (await api<Environment>('POST', `/projects/${pid}/environments`, { name: host, baseUrl: base, variables: [], headers: [], auth: { type: 'none' } })).id
       } else {
         envId = Number(chosenTarget)
       }
       const step = { ...newStep(requestName(path)), method, url: path.trim() || '/' }
       if (method !== 'GET' && method !== 'HEAD' && method !== 'DELETE') step.body = { type: 'json', variantPick: 'roundRobin', contentType: '', variants: [{ id: uid(), name: 'default', weight: 1, enabled: true, mode: 'fields', fields: [], raw: '' }] }
-      return api<Test>('POST', `/projects/${pid}/tests`, {
+      const test = await api<Test>('POST', `/projects/${pid}/tests`, {
         name,
         environmentId: envId,
         flows: [{ id: uid(), name: step.name, enabled: true, weight: 1, steps: [step] }],
       })
+      return { test, pid }
     },
-    onSuccess: async (t) => {
-      await queryClient.invalidateQueries({ queryKey: ['projects'] })
-      await queryClient.invalidateQueries({ queryKey: ['tests'] })
+    onSuccess: async ({ test, pid }) => {
+      await queryClient.invalidateQueries({ queryKey: keys.projects })
+      await queryClient.invalidateQueries({ queryKey: keys.project(pid) })
+      await queryClient.invalidateQueries({ queryKey: keys.tests(pid) })
       onOpenChange(false)
-      await navigate(`/tests/${t.id}`)
+      await navigate(`/tests/${test.id}`)
     },
   })
   const err = create.error instanceof ApiError ? create.error : null

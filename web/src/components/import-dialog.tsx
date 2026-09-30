@@ -49,8 +49,8 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
     onSuccess: async (r) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: keys.projects }),
-        queryClient.invalidateQueries({ queryKey: ['project'] }),
-        queryClient.invalidateQueries({ queryKey: ['tests'] }),
+        queryClient.invalidateQueries({ queryKey: keys.project(r.projectId) }),
+        queryClient.invalidateQueries({ queryKey: keys.tests(r.projectId) }),
       ])
       toast.success(`Imported ${r.tests.length} test${r.tests.length === 1 ? '' : 's'}`)
       onOpenChange(false)
