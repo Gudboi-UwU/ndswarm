@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { RunStatus, Tick } from './types'
+import type { RunStatus, ThresholdResult, Tick } from './types'
 
 export interface StatusMessage {
   type: 'run.status'
@@ -7,6 +7,7 @@ export interface StatusMessage {
   status: RunStatus
   verdict?: string
   endReason?: string
+  thresholds?: ThresholdResult[]
 }
 
 const backoff = [1000, 2000, 5000]

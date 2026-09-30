@@ -71,6 +71,8 @@ function RunView({ run }: { run: Run }) {
   const live = run.status === 'running' || run.status === 'stopping'
   const [tick, setTick] = useState<Tick | undefined>(run.live)
   const [status, setStatus] = useState(run.status)
+  const [verdict, setVerdict] = useState(run.verdict)
+  const [thresholds, setThresholds] = useState(run.summary?.thresholds)
   const [stopping, setStopping] = useState(false)
   const project = useQuery({ queryKey: keys.project(run.projectId ?? 0), queryFn: () => api<Project>('GET', `/projects/${run.projectId}`), enabled: !!run.projectId })
   const [deleting, setDeleting] = useState(false)
@@ -103,10 +105,21 @@ function RunView({ run }: { run: Run }) {
     },
     onStatus: (s) => {
       setStatus(s.status)
+      if (s.status === 'finished') {
+        // The verdict and rule results are already final at this point: use them straight from
+        // the socket message instead of waiting for the refetch below, so the badge and toast
+        // never flash "Passed" for a run that actually broke a rule.
+        setVerdict((s.verdict as 'pass' | 'fail') ?? null)
+        setThresholds(s.thresholds)
+      }
       if (s.status !== 'running' && s.status !== 'stopping') {
         void queryClient.invalidateQueries({ queryKey: keys.run(run.id) })
         void queryClient.invalidateQueries({ queryKey: keys.activeRun })
-        if (s.status === 'finished') toast.success('Run finished')
+        if (s.status === 'finished') {
+          if (s.verdict === 'fail') toast.error('Run failed: a pass/fail rule was broken')
+          else if (s.thresholds && s.thresholds.length > 0) toast.success('Run passed')
+          else toast.success('Run finished')
+        }
       }
     },
     onReconnect: () => void queryClient.invalidateQueries({ queryKey: keys.timeseries(run.id) }),
@@ -168,7 +181,7 @@ function RunView({ run }: { run: Run }) {
         </nav>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">{run.testName}</h1>
-          <RunStatus run={{ status, verdict: run.verdict }} />
+          <RunStatus run={{ status, verdict }} rulesCount={thresholds?.length ?? 0} />
           {!live && <span className="text-sm text-muted-foreground">ran for <span className="font-mono tabular-nums">{formatElapsed(elapsed)}</span></span>}
           <div className="ml-auto flex gap-2">
             {live && me?.can.run && (
@@ -202,8 +215,8 @@ function RunView({ run }: { run: Run }) {
         )}
       </header>
 
-      <Headline total={total} live={live} status={status} verdict={run.verdict} />
-      {run.summary?.thresholds && run.summary.thresholds.length > 0 && <ThresholdsBlock results={run.summary.thresholds} />}
+      <Headline total={total} live={live} status={status} verdict={verdict} results={thresholds} />
+      {thresholds && thresholds.length > 0 && <ThresholdsBlock results={thresholds} />}
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -302,7 +315,7 @@ function RunView({ run }: { run: Run }) {
 }
 
 /** One sentence that answers "how did it go?" before any number needs reading. */
-function Headline({ total, live, status, verdict }: { total?: Stats; live: boolean; status: string; verdict: Run['verdict'] }) {
+function Headline({ total, live, status, verdict, results }: { total?: Stats; live: boolean; status: string; verdict: Run['verdict']; results?: ThresholdResult[] }) {
   if (!total || total.count === 0) {
     return (
       <p className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">
@@ -311,7 +324,9 @@ function Headline({ total, live, status, verdict }: { total?: Stats; live: boole
     )
   }
   const rate = (total.err / total.count) * 100
+  // The verdict decides pass/fail; a broken rule is "bad" no matter how few requests failed.
   const ruleFailed = status === 'finished' && verdict === 'fail'
+  const broken = results?.filter((r) => !r.passed).length ?? 0
   // Three honest levels: nothing failed, a few failed (under 1%), a real problem (or a broken rule).
   const level = ruleFailed ? 'bad' : total.err === 0 ? 'good' : rate < 1 ? 'some' : 'bad'
   const stopped = !live && status !== 'finished'
@@ -322,8 +337,10 @@ function Headline({ total, live, status, verdict }: { total?: Stats; live: boole
       ? 'Many requests are failing'
       : stopped
         ? 'Stopped early, many requests failed'
-        : ruleFailed && total.err === 0
-          ? 'Finished, but a pass/fail rule failed'
+        : ruleFailed
+          ? broken > 1
+            ? `Finished, but ${broken} pass/fail rules failed`
+            : 'Finished, but a pass/fail rule failed'
           : 'Finished, many requests failed',
   }[level]
   return (

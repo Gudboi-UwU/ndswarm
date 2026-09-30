@@ -204,7 +204,7 @@ func (r *Runner) run(ctx context.Context, a *active, plan *engine.Plan) {
 	r.active = nil
 	r.mu.Unlock()
 	close(a.done)
-	r.pub.Publish(id, StatusMsg{Type: "run.status", RunID: id, Status: status, Verdict: verdict, EndReason: reason})
+	r.pub.Publish(id, StatusMsg{Type: "run.status", RunID: id, Status: status, Verdict: verdict, EndReason: reason, Thresholds: results})
 }
 
 // computeVerdict evaluates the test's pass/fail rules against the run's final totals.
@@ -241,13 +241,15 @@ type TickMsg struct {
 	DroppedIterations int64              `json:"droppedIterations"`
 }
 
-// StatusMsg is the WebSocket "run.status" message.
+// StatusMsg is the WebSocket "run.status" message. Thresholds carries the rule results so the
+// UI can show the final verdict the instant the run ends, without waiting for a refetch.
 type StatusMsg struct {
-	Type      string `json:"type"`
-	RunID     int64  `json:"runId"`
-	Status    string `json:"status"`
-	Verdict   string `json:"verdict,omitempty"`
-	EndReason string `json:"endReason,omitempty"`
+	Type       string            `json:"type"`
+	RunID      int64             `json:"runId"`
+	Status     string            `json:"status"`
+	Verdict    string            `json:"verdict,omitempty"`
+	EndReason  string            `json:"endReason,omitempty"`
+	Thresholds []ThresholdResult `json:"thresholds,omitempty"`
 }
 
 func (r *Runner) tickMsg(id int64, t engine.Tick) TickMsg {
@@ -320,8 +322,8 @@ func (r *Runner) finish(id int64, status, reason string, rec *metrics.Recorder, 
 	if verdict != "" {
 		verdictArg = verdict
 	}
-	if _, err := tx.Exec("UPDATE runs SET status = ?, verdict = ?, end_reason = ?, ended_at = ?, summary_json = ? WHERE id = ?",
-		status, verdictArg, reason, r.now().UnixMilli(), string(summary), id); err != nil {
+	if _, err := tx.Exec("UPDATE runs SET status = ?, verdict = ?, end_reason = ?, ended_at = ?, summary_json = ?, rules_count = ? WHERE id = ?",
+		status, verdictArg, reason, r.now().UnixMilli(), string(summary), len(results), id); err != nil {
 		return err
 	}
 	if iv := rec.FinalInterval(); iv != nil {
