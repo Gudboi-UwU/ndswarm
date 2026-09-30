@@ -8,7 +8,7 @@ import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
 import type { Environment, Flow, Generator, Project, Test } from '@/api/types'
 import { ExportMenu } from '@/components/export-menu'
-import { ConfirmDelete, EmptyState } from '@/components/page'
+import { ConfirmDelete, EmptyState, ErrorState, useTitle } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -29,7 +29,7 @@ export default function TestBuilderPage() {
   const test = useQuery({ queryKey: keys.test(id), queryFn: () => api<Test>('GET', `/tests/${id}`) })
 
   if (test.error instanceof ApiError && test.error.status === 404) return <NotFoundPage />
-  if (test.isError) return <p className="text-sm text-destructive">{errorMessage(test.error)}</p>
+  if (test.isError) return <ErrorState error={test.error} onRetry={() => void test.refetch()} />
   if (test.isPending) return <BuilderSkeleton />
   return <Builder key={test.data.id} saved={test.data} />
 }
@@ -124,11 +124,14 @@ function Builder({ saved }: { saved: Test }) {
     [shownErrors, draft.environmentId, env, generators.data, readOnly],
   )
 
+  useTitle(draft.name, 'Test')
+
   return (
     <BuilderContext.Provider value={ctx}>
       <div className="grid gap-6">
         <header className="grid gap-3">
-          <nav className="text-sm text-muted-foreground">
+          <h1 className="sr-only">{draft.name}</h1>
+          <nav aria-label="Breadcrumb" className="text-sm text-muted-foreground">
             <Link to="/projects" className="hover:text-foreground">
               Projects
             </Link>
@@ -149,6 +152,12 @@ function Builder({ saved }: { saved: Test }) {
               className="peer h-10 max-w-md border-transparent bg-transparent px-2 text-xl font-semibold shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent"
             />
             {!readOnly && <PencilIcon className="-ml-1 size-4 text-muted-foreground peer-focus-visible:hidden" aria-hidden="true" />}
+            {dirty && (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+                Unsaved changes
+              </span>
+            )}
             </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               Server
@@ -175,18 +184,19 @@ function Builder({ saved }: { saved: Test }) {
               <Button variant="ghost" size="sm" asChild>
                 <Link to={`/runs?testId=${saved.id}`}>Past runs</Link>
               </Button>
-              <ExportMenu path={`/tests/${saved.id}`} note={dirty ? 'Unsaved changes are not included.' : undefined} />
+              <ExportMenu size="sm" path={`/tests/${saved.id}`} note={dirty ? 'Unsaved changes are not included.' : undefined} />
               {readOnly ? (
                 !me?.can.run && <span className="text-sm text-muted-foreground">Read only</span>
               ) : (
-                <Button variant="outline" onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
+                <Button variant="outline" size="sm" onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
                   {save.isPending ? 'Saving' : dirty ? 'Save' : 'Saved'}
                 </Button>
               )}
               {me?.can.run && (
                 <StartButton
                   testId={saved.id}
-                  blockedReason={flows.length === 0 ? 'Add a request first.' : undefined}
+                  size="sm"
+                  blockedReason={flows.length === 0 ? 'Add a request first.' : flows.every((f) => !f.enabled) ? 'Turn on at least one request.' : undefined}
                   // Running always uses the saved test, so unsaved edits are saved first.
                   beforeStart={dirty && !readOnly ? async () => (await save.mutateAsync().then(() => true, () => false)) : undefined}
                 />
@@ -218,7 +228,7 @@ function Builder({ saved }: { saved: Test }) {
           </TabsContent>
           <TabsContent value="settings" className="mt-6">
             <fieldset disabled={readOnly} className="min-w-0">
-              <legend className="sr-only">HTTP settings</legend>
+              <legend className="sr-only">Options</legend>
               <SettingsEditor settings={draft.settings} onChange={(settings) => setDraft((d) => ({ ...d, settings }))} />
             </fieldset>
           </TabsContent>
@@ -323,6 +333,10 @@ function Builder({ saved }: { saved: Test }) {
           setFlows(flows.filter((_, j) => j !== deleting))
           setSelected(Math.max(0, deleting - 1))
           setDeleting(null)
+          // Deleting a request shifts every later index, so a stale server error map would now
+          // point at the wrong request. It is only shown once the test is dirty (see `shownErrors`
+          // above), and this edit already makes it dirty, so clearing it here is safe.
+          setErrors(new Map())
         }}
         onCancel={() => setDeleting(null)}
       />
