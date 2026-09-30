@@ -22,7 +22,7 @@ export function newStep(name: string): Step {
 
 /** An "endpoint" is a flow with exactly one step; names and enabled stay in sync. */
 export function newEndpoint(n: number): Flow {
-  const name = `Endpoint ${n}`
+  const name = `Request ${n}`
   return { id: uid(), name, enabled: true, weight: 1, steps: [newStep(name)] }
 }
 

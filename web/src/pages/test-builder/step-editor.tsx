@@ -116,7 +116,7 @@ export function EndpointEditor({
           <KVEditor items={step.query} onChange={(query) => setStep({ query })} path={`${path}.query`} keyLabel="Parameter" />
         </Disclosure>
         <Disclosure title="Headers" summary={headerCount ? `${headerCount} set` : 'none'} defaultOpen={step.headers.length > 0} error={hasErrorUnder(errors, `${path}.headers`)}>
-          <p className="mb-3 text-sm text-muted-foreground">Sent with this request. They replace target headers with the same name.</p>
+          <p className="mb-3 text-sm text-muted-foreground">Sent with this request. They replace the server's headers with the same name.</p>
           <KVEditor items={step.headers} onChange={(headers) => setStep({ headers })} path={`${path}.headers`} keyLabel="Header" />
         </Disclosure>
         <Disclosure title="Body" summary={bodyLabel(step.body)} defaultOpen={step.body.type !== 'none'} error={hasErrorUnder(errors, `${path}.body`)}>

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { api, errorMessage } from '@/api/client'
 import type { LogDetail, LogRow, RunKey } from '@/api/types'
 import { Code, Waterfall } from '@/components/http-view'
+import { Help } from '@/components/table-help'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -16,6 +17,7 @@ import { formatBytes, formatElapsed, formatNumber, headerText, pretty } from '@/
 import { categoryLabel, emptyFilters, keyLabel, type LogFilters } from '@/lib/run'
 import { cn } from '@/lib/utils'
 
+const reasonLabel: Record<string, string> = { error: 'Error', sample: 'Sample', slowest: 'Slowest' }
 const reasonHelp: Record<string, string> = {
   error: 'Logged because it failed.',
   sample: 'A random sample of successful requests.',
@@ -42,13 +44,13 @@ export function LogsTab({ runId, keys: runKeys, filters, onFilters, dropped }: {
     <div className="grid gap-4">
       <div className="flex flex-wrap items-end gap-3">
         <div className="grid gap-2">
-          <Label htmlFor="log-key">Endpoint</Label>
+          <Label htmlFor="log-key">Request</Label>
           <Select value={filters.key || 'all'} onValueChange={(v) => set({ key: v === 'all' ? '' : v })}>
             <SelectTrigger id="log-key" className="w-56">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All endpoints</SelectItem>
+              <SelectItem value="all">All requests</SelectItem>
               {runKeys.map((k) => (
                 <SelectItem key={k.keyId} value={String(k.keyId)}>
                   {keyLabel(k)}
@@ -108,7 +110,7 @@ export function LogsTab({ runId, keys: runKeys, filters, onFilters, dropped }: {
         )}
       </div>
       <p className="text-sm text-muted-foreground">
-        Per endpoint and second, ndswarm keeps up to 50 errors, 20 sampled successes and the slowest request.
+        Per request and second, ndswarm keeps up to 50 errors, 20 sampled successes and the slowest request.
         {dropped > 0 && ` ${formatNumber(dropped)} more requests qualified but were not stored.`} Click a point in a chart to see its second.
       </p>
 
@@ -124,10 +126,10 @@ export function LogsTab({ runId, keys: runKeys, filters, onFilters, dropped }: {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-20">Time</TableHead>
-                <TableHead>Endpoint</TableHead>
+                <TableHead>Request</TableHead>
                 <TableHead className="w-20">Status</TableHead>
-                <TableHead className="w-28 text-right">Latency</TableHead>
-                <TableHead className="w-16 text-right">VU</TableHead>
+                <TableHead className="w-28 text-right">Response time</TableHead>
+                <TableHead className="w-20 text-right">User #</TableHead>
                 <TableHead className="w-24">Logged as</TableHead>
                 <TableHead>Error</TableHead>
               </TableRow>
@@ -144,8 +146,8 @@ export function LogsTab({ runId, keys: runKeys, filters, onFilters, dropped }: {
                   <TableCell className={cn('font-mono', l.category && 'text-destructive')}>{l.status || '-'}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatNumber(l.latencyMs, 1)} ms</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{l.vu}</TableCell>
-                  <TableCell className="text-muted-foreground" title={reasonHelp[l.reason]}>
-                    {l.reason}
+                  <TableCell className="text-muted-foreground">
+                    <Help help={reasonHelp[l.reason]}>{reasonLabel[l.reason] ?? l.reason}</Help>
                   </TableCell>
                   <TableCell className="max-w-80 truncate text-destructive">{l.error}</TableCell>
                 </TableRow>
@@ -181,7 +183,7 @@ export function LogDetailDialog({ runId, logId, keys: runKeys, onClose }: { runI
         <DialogHeader>
           <DialogTitle>{d ? keyLabel(runKeys.find((k) => k.keyId === d.keyId)) : 'Request'}</DialogTitle>
           <DialogDescription>
-            {d && `At ${formatElapsed(d.sec)}, virtual user ${d.vu}, iteration ${d.iter}. ${reasonHelp[d.reason]}`}
+            {d && `At ${formatElapsed(d.sec)}, simulated user ${d.vu}, iteration ${d.iter}. ${reasonHelp[d.reason]}`}
           </DialogDescription>
         </DialogHeader>
         {detail.isPending ? (
