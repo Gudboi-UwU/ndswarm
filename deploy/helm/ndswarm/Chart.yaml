@@ -2,5 +2,5 @@ apiVersion: v2
 name: ndswarm
 description: UI-driven HTTP load testing. One pod, SQLite on a volume.
 type: application
-version: 0.4.3
-appVersion: "0.4.3"
+version: 0.5.0
+appVersion: "0.5.0"
