@@ -32,7 +32,8 @@ test('setup, run the demo, read results', async ({ page }) => {
   const totals = page.getByRole('region', { name: 'Totals' })
   await expect(totals.getByText('Requests per second')).toBeVisible()
   await expect(totals.locator('p.font-mono').first()).not.toHaveText('-', { timeout: 10_000 })
-  await expect(page.getByText('Passed', { exact: true })).toBeVisible({ timeout: 40_000 })
+  // No pass/fail rules are set on the demo test, so a clean run shows "Finished", not "Passed".
+  await expect(page.getByText('Finished', { exact: true })).toBeVisible({ timeout: 40_000 })
   await expect(page.getByText(/^Finished, /)).toBeVisible()
 
   await page.getByRole('tab', { name: 'Details' }).click()
