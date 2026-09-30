@@ -16,6 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { ConfirmDelete, useTitle } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -32,6 +33,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { formatDate } from '@/lib/format'
 
 const roles: { value: Role; label: string; help: string }[] = [
   { value: 'admin', label: 'Admin', help: 'Everything, including users and settings' },
@@ -41,6 +43,7 @@ const roles: { value: Role; label: string; help: string }[] = [
 
 export function SettingsPage() {
   const { data: me } = useMe()
+  useTitle('Settings')
   if (!me?.can.admin) {
     return (
       <div className="max-w-md">
@@ -83,12 +86,14 @@ function UsersSection({ currentUserId }: { currentUserId?: number }) {
   const [adding, setAdding] = useState(false)
   const [resetting, setResetting] = useState<User | null>(null)
   const [deleting, setDeleting] = useState<User | null>(null)
+  const [ownRoleChange, setOwnRoleChange] = useState<{ id: number; role: Role } | null>(null)
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: usersKey })
   const changeRole = useMutation({
     mutationFn: ({ id, role }: { id: number; role: Role }) => api<User>('PATCH', `/users/${id}`, { role }),
     onSuccess: async (u) => {
       toast.success(`${u.username} is now ${u.role}`)
+      setOwnRoleChange(null)
       await refresh()
       if (u.id === currentUserId) await queryClient.invalidateQueries({ queryKey: meKey })
     },
@@ -150,7 +155,14 @@ function UsersSection({ currentUserId }: { currentUserId?: number }) {
                   {u.id === currentUserId && <span className="ml-2 text-xs font-normal text-muted-foreground">(you)</span>}
                 </TableCell>
                 <TableCell>
-                  <Select value={u.role} onValueChange={(role) => changeRole.mutate({ id: u.id, role: role as Role })}>
+                  <Select
+                    value={u.role}
+                    onValueChange={(role) =>
+                      u.id === currentUserId
+                        ? setOwnRoleChange({ id: u.id, role: role as Role })
+                        : changeRole.mutate({ id: u.id, role: role as Role })
+                    }
+                  >
                     <SelectTrigger size="sm" className="w-32" aria-label={`Role of ${u.username}`}>
                       <SelectValue />
                     </SelectTrigger>
@@ -164,7 +176,7 @@ function UsersSection({ currentUserId }: { currentUserId?: number }) {
                   </Select>
                 </TableCell>
                 <TableCell className="hidden text-sm text-muted-foreground sm:table-cell">
-                  {new Date(u.createdAt).toLocaleDateString()}
+                  {formatDate(u.createdAt)}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon-sm" aria-label={`Reset password for ${u.username}`} onClick={() => setResetting(u)}>
@@ -188,6 +200,17 @@ function UsersSection({ currentUserId }: { currentUserId?: number }) {
 
       <AddUserDialog open={adding} onOpenChange={setAdding} onCreated={refresh} />
       <ResetPasswordDialog user={resetting} onClose={() => setResetting(null)} />
+      <ConfirmDelete
+        target={ownRoleChange}
+        title={`Change your own role to ${ownRoleChange?.role}?`}
+        description="If you remove your admin role, you may lose access to this settings page."
+        confirm="Change role"
+        pendingLabel="Changing"
+        pending={changeRole.isPending}
+        error={changeRole.error}
+        onConfirm={() => ownRoleChange && changeRole.mutate(ownRoleChange)}
+        onCancel={() => setOwnRoleChange(null)}
+      />
       <AlertDialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -396,7 +419,7 @@ function TargetsSection() {
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['settings'], queryFn: () => api<Settings>('GET', '/settings') })
   return (
-    <Section title="Allowed servers and retention" description="Limits that apply to every test and run.">
+    <Section title="Allowed hosts and retention" description="Limits that apply to every test and run.">
       {settings.isPending ? (
         <Skeleton className="h-48 w-full" />
       ) : settings.isError ? (
@@ -434,7 +457,7 @@ function TargetsForm({ initial, onSaved }: { initial: Settings; onSaved: (s: Set
     <form onSubmit={submit} className="grid max-w-2xl gap-6" noValidate>
       {save.error && !err?.details.length && <p className="text-sm text-destructive">{errorMessage(save.error)}</p>}
       <div className="grid gap-2">
-        <Label htmlFor="allowlist">Servers tests may call</Label>
+        <Label htmlFor="allowlist">Hosts tests may call</Label>
         <Textarea id="allowlist" rows={4} className="font-mono text-[13px]" placeholder={'api.example.com\n*.staging.example.com'} value={allowlist} aria-invalid={hostErr ? true : undefined} onChange={(e) => setAllowlist(e.target.value)} />
         <p className={hostErr ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
           {hostErr ?? 'One host per line. Leave empty to allow any host. Applies to runs, preflight and Try.'}
