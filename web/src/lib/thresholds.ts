@@ -1,6 +1,5 @@
 // Plain-English labels for pass/fail rules (test builder) and their results (run page).
 import type { Threshold, ThresholdMetric, ThresholdOp, ThresholdResult } from '@/api/types'
-import { formatNumber } from './format'
 
 export const METRICS: { value: ThresholdMetric; label: string; subject: string; verb: string; unit: string; digits: number }[] = [
   { value: 'failed_pct', label: 'Failed requests (%)', subject: 'failed requests', verb: 'are', unit: '%', digits: 2 },
@@ -26,9 +25,16 @@ function cap(s: string): string {
   return s[0].toUpperCase() + s.slice(1)
 }
 
+/** Trims trailing zeros. Values >= 1 keep up to `maxDigits` decimals; smaller values keep 3 significant digits. */
+function formatValue(v: number, maxDigits: number): string {
+  if (v === 0) return '0'
+  const digits = Math.abs(v) >= 1 ? maxDigits : Math.max(0, 3 - Math.ceil(Math.log10(Math.abs(v))))
+  return v.toLocaleString(undefined, { maximumFractionDigits: digits, minimumFractionDigits: 0 })
+}
+
 export function formatMetric(m: ThresholdMetric, v: number): string {
   const c = metricOf(m)
-  return `${formatNumber(v, c.digits)}${c.unit}`
+  return `${formatValue(v, c.digits)}${c.unit}`
 }
 
 // A rule passes when the metric satisfies op+value (e.g. op "<=" passes when actual <= value),
@@ -41,7 +47,7 @@ export function ruleSentence(t: Pick<Threshold, 'metric' | 'op' | 'value'>): str
   return `${cap(m.subject)} ${m.verb} ${op.label} ${formatMetric(t.metric, t.value)}, or the run fails.`
 }
 
-/** "Failed requests are at most 1%: actual 2.30%." */
+/** "Failed requests are at most 1%: actual 2.3%." */
 export function resultSentence(r: ThresholdResult): string {
   const m = metricOf(r.metric)
   const op = OPS.find((x) => x.value === r.op) ?? OPS[0]
