@@ -303,8 +303,9 @@ func (r *Runner) Statuses(ctx context.Context, runID int64) ([]StatusRow, error)
 type RunFilter struct {
 	TestID    int64
 	ProjectID int64
-	Status    string
-	Before    int64 // cursor: ids lower than this
+	Status    string // exact run status; prefer Result for the history filter
+	Result    string // passed | failed | norules | aborted | error | running
+	Before    int64  // cursor: ids lower than this
 	Limit     int
 }
 

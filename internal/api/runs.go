@@ -64,7 +64,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := runner.RunFilter{Status: q.Get("status")}
+	f := runner.RunFilter{Status: q.Get("status"), Result: q.Get("result")}
 	f.TestID, _ = strconv.ParseInt(q.Get("testId"), 10, 64)
 	f.ProjectID, _ = strconv.ParseInt(q.Get("projectId"), 10, 64)
 	f.Before, _ = strconv.ParseInt(q.Get("before"), 10, 64)

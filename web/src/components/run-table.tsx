@@ -19,13 +19,21 @@ import { glossary } from '@/lib/glossary'
 import { sortRows, type SortState } from '@/lib/sort'
 import { cn } from '@/lib/utils'
 
-export function RunStatus({ run }: { run: Pick<Run, 'status' | 'verdict'> }) {
-  if (run.status === 'finished')
+export function RunStatus({ run, rulesCount = 0 }: { run: Pick<Run, 'status' | 'verdict'>; rulesCount?: number }) {
+  if (run.status === 'finished') {
+    if (run.verdict === 'fail')
+      return (
+        <Badge variant="destructive" title="A pass/fail rule of this test was broken.">
+          Failed
+        </Badge>
+      )
+    if (rulesCount > 0) return <Badge title="Every pass/fail rule of this test held.">Passed</Badge>
     return (
-      <Badge variant={run.verdict === 'fail' ? 'destructive' : 'default'} title={run.verdict === 'fail' ? 'A pass/fail rule of this test was broken.' : 'The run finished. No pass/fail rules are set, so finishing counts as passed; check the failed requests too.'}>
-        {run.verdict === 'fail' ? 'Failed' : 'Passed'}
+      <Badge variant="secondary" title="No pass/fail rules are set. Check the failed requests.">
+        Finished
       </Badge>
     )
+  }
   const label: Record<string, string> = { running: 'Running', stopping: 'Stopping', aborted: 'Stopped', failed: 'Error' }
   return <Badge variant={run.status === 'failed' ? 'destructive' : run.status === 'running' ? 'default' : 'secondary'}>{label[run.status] ?? run.status}</Badge>
 }
@@ -94,7 +102,7 @@ export function RunTable({ runs, showTest = true, sort, onSort }: { runs: Run[];
                 </TableCell>
                 {showTest && <TableCell className="font-medium">{r.testName}</TableCell>}
                 <TableCell>
-                  <RunStatus run={r} />
+                  <RunStatus run={r} rulesCount={r.summary?.thresholds?.length ?? 0} />
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">{formatDate(r.startedAt)}</TableCell>
                 <TableCell className="text-right font-mono tabular-nums">{formatElapsed(r.summary?.elapsedSec ?? 0)}</TableCell>
@@ -119,15 +127,15 @@ const PAGE = 50
  */
 export function RunsView({ projectId }: { projectId?: number }) {
   const [params, setParams] = useSearchParams()
-  const status = params.get('status') ?? ''
+  const result = params.get('result') ?? ''
   const project = projectId ? String(projectId) : (params.get('project') ?? '')
   const testId = params.get('testId') ?? ''
   const grouped = !projectId && params.get('group') !== 'off'
   const [sort, setSort] = useState<SortState<SortKey>>({ key: 'id', dir: 'desc' })
   const projects = useQuery({ queryKey: keys.projects, queryFn: () => api<Project[]>('GET', '/projects'), enabled: !projectId })
   const runs = useInfiniteQuery({
-    queryKey: ['runs', 'history', status, project, testId],
-    queryFn: ({ pageParam }) => api<Run[]>('GET', `/runs?limit=${PAGE}&status=${status}&projectId=${project}&testId=${testId}&before=${pageParam}`),
+    queryKey: ['runs', 'history', result, project, testId],
+    queryFn: ({ pageParam }) => api<Run[]>('GET', `/runs?limit=${PAGE}&result=${result}&projectId=${project}&testId=${testId}&before=${pageParam}`),
     initialPageParam: 0,
     getNextPageParam: (last) => (last.length === PAGE ? last[last.length - 1].id : undefined),
   })
@@ -145,7 +153,7 @@ export function RunsView({ projectId }: { projectId?: number }) {
     if (!groups.has(k)) groups.set(k, [])
     groups.get(k)!.push(r)
   }
-  const filtered = !!(status || testId || (project && !projectId))
+  const filtered = !!(result || testId || (project && !projectId))
 
   return (
     <div className="grid gap-4">
@@ -170,15 +178,17 @@ export function RunsView({ projectId }: { projectId?: number }) {
         )}
         <div className="grid gap-2">
           <Label htmlFor="runs-status">Result</Label>
-          <Select value={status || 'all'} onValueChange={(v) => set('status', v === 'all' ? '' : v)}>
-            <SelectTrigger id="runs-status" className="w-40">
+          <Select value={result || 'all'} onValueChange={(v) => set('result', v === 'all' ? '' : v)}>
+            <SelectTrigger id="runs-status" className="w-48">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Any result</SelectItem>
-              <SelectItem value="finished">Passed</SelectItem>
+              <SelectItem value="passed">Passed</SelectItem>
+              <SelectItem value="failed">Failed (rule broken)</SelectItem>
+              <SelectItem value="norules">Finished without rules</SelectItem>
               <SelectItem value="aborted">Stopped</SelectItem>
-              <SelectItem value="failed">Error</SelectItem>
+              <SelectItem value="error">Error</SelectItem>
               <SelectItem value="running">Running</SelectItem>
             </SelectContent>
           </Select>

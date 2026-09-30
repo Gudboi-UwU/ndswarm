@@ -18,7 +18,7 @@ export const glossary = {
   duration: 'How long the run lasted.',
   status: 'The HTTP status code the server answered with. 2xx and 3xx count as success, 4xx and 5xx as failures.',
   result:
-    'Passed: the run finished and every pass/fail rule held (or the test has none). Failed: the run finished but broke a pass/fail rule. Stopped: someone or something ended it early.',
+    'Passed: the run finished and every pass/fail rule held. Failed: the run finished but broke a pass/fail rule. Finished: the run finished but the test has no pass/fail rules, so check the failed requests too. Stopped: someone or something ended it early.',
   interval: 'Each row sums up this many seconds of the run.',
   total: 'All requests together. Response times here are computed over every request, not averaged per row.',
 } as const

@@ -29,13 +29,14 @@ type Run struct {
 	Live        *TickMsg     `json:"live,omitempty"`
 }
 
-const runColumns = `id, test_id, project_id, test_name, config_json, keys_json, status, verdict, started_at, ended_at, end_reason, created_by, summary_json`
+const runColumns = `id, test_id, project_id, test_name, config_json, keys_json, status, verdict, started_at, ended_at, end_reason, created_by, summary_json, rules_count`
 
 func scanRun(row interface{ Scan(...any) error }) (Run, error) {
 	var r Run
 	var cfg, keys string
 	var summary sql.NullString
-	if err := row.Scan(&r.ID, &r.TestID, &r.ProjectID, &r.TestName, &cfg, &keys, &r.Status, &r.Verdict, &r.StartedAt, &r.EndedAt, &r.EndReason, &r.CreatedBy, &summary); err != nil {
+	var rulesCount int
+	if err := row.Scan(&r.ID, &r.TestID, &r.ProjectID, &r.TestName, &cfg, &keys, &r.Status, &r.Verdict, &r.StartedAt, &r.EndedAt, &r.EndReason, &r.CreatedBy, &summary, &rulesCount); err != nil {
 		return r, err
 	}
 	var c struct {
@@ -88,6 +89,18 @@ func (r *Runner) List(ctx context.Context, f RunFilter) ([]Run, error) {
 	}
 	if f.Status != "" {
 		where, args = append(where, "status = ?"), append(args, f.Status)
+	}
+	switch f.Result {
+	case "passed":
+		where = append(where, "status = 'finished' AND verdict = 'pass' AND rules_count > 0")
+	case "failed":
+		where = append(where, "status = 'finished' AND verdict = 'fail'")
+	case "norules":
+		where = append(where, "status = 'finished' AND verdict = 'pass' AND rules_count = 0")
+	case "aborted", "running":
+		where, args = append(where, "status = ?"), append(args, f.Result)
+	case "error":
+		where = append(where, "status = 'failed'")
 	}
 	if f.Before > 0 {
 		where, args = append(where, "id < ?"), append(args, f.Before)
