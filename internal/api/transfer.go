@@ -163,9 +163,10 @@ func (s *Server) importPreview(w http.ResponseWriter, r *http.Request) {
 		URL    string `json:"url"`
 	}
 	type testOut struct {
-		Name     string   `json:"name"`
-		Server   string   `json:"server"`
-		Requests []reqOut `json:"requests"`
+		Name       string   `json:"name"`
+		Server     string   `json:"server"`
+		Requests   []reqOut `json:"requests"`
+		Thresholds int      `json:"thresholds"`
 	}
 	type serverOut struct {
 		Name      string `json:"name"`
@@ -178,7 +179,7 @@ func (s *Server) importPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	tests := []testOut{}
 	for _, t := range b.Tests {
-		out := testOut{Name: t.Name, Server: t.Server, Requests: []reqOut{}}
+		out := testOut{Name: t.Name, Server: t.Server, Requests: []reqOut{}, Thresholds: len(t.Thresholds)}
 		for _, f := range t.Flows {
 			for _, st := range f.Steps {
 				out.Requests = append(out.Requests, reqOut{st.Method, st.Name, st.URL})

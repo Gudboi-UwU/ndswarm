@@ -27,7 +27,7 @@ export function ExportMenu({ path, note }: { path: string; note?: string }) {
         ))}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          Secret values are not exported.{note ? ` ${note}` : ''}
+          Secret values are not exported. Postman files do not include load settings or pass/fail rules.{note ? ` ${note}` : ''}
         </DropdownMenuLabel>
       </DropdownMenuContent>
     </DropdownMenu>

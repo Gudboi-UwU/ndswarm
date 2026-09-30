@@ -178,19 +178,20 @@ func sample() (model.Project, []model.Environment, []model.Test) {
 		Variables: []model.EnvVar{{Key: "user", Value: "demo"}, {Key: "pass", Value: "hunter22", Secret: true}},
 		Headers:   []model.EnvVar{{Key: "X-Api", Value: "k-123", Secret: true}},
 		Auth:      model.Auth{Type: "bearer", Token: "tok-999"}}
-	t := model.Test{Name: "Checkout", Description: "d", EnvironmentID: &id, Settings: model.DefaultSettings, Flows: []model.Flow{
-		{ID: "f1", Name: "Home", Enabled: true, Weight: 2, Steps: []model.Step{{ID: "s1", Name: "Home", Enabled: true, Method: "GET", URL: "/fast",
-			Query: []model.KV{{Key: "ms", Value: "{{int 20 80}}", Enabled: true}}, Body: model.Body{Type: "none"}}}},
-		{ID: "f2", Name: "Order", Enabled: true, Weight: 1, Steps: []model.Step{{ID: "s2", Name: "Order", Enabled: true, Method: "POST", URL: "/echo",
-			Body: model.Body{Type: "json", Variants: []model.Variant{{ID: "v", Name: "v", Weight: 1, Enabled: true, Fields: []model.Field{
-				{Key: "user", Type: "string", Value: `{{var "user"}}`},
-				{Key: "qty", Type: "integer", Value: "3"},
-				{Key: "tags", Type: "array", ArrayLen: &model.MinMax{Min: 1, Max: 1}, Children: []model.Field{{Type: "string", Value: "a"}}},
-				{Key: "gift", Type: "boolean", Value: "false", Enabled: &yes},
-			}}}}}}},
-		{ID: "f3", Name: "Form", Enabled: true, Weight: 1, Steps: []model.Step{{ID: "s3", Name: "Form", Enabled: true, Method: "PUT", URL: "https://other.test/x",
-			Body: model.Body{Type: "form", Variants: []model.Variant{{ID: "v", Name: "v", Weight: 1, Enabled: true, Fields: []model.Field{{Key: "a", Type: "string", Value: "{{uuid}}"}}}}}}}},
-	}}
+	t := model.Test{Name: "Checkout", Description: "d", EnvironmentID: &id, Settings: model.DefaultSettings,
+		Thresholds: []model.Threshold{{ID: "th1", Metric: "failed_pct", Op: "<=", Value: 1}}, Flows: []model.Flow{
+			{ID: "f1", Name: "Home", Enabled: true, Weight: 2, Steps: []model.Step{{ID: "s1", Name: "Home", Enabled: true, Method: "GET", URL: "/fast",
+				Query: []model.KV{{Key: "ms", Value: "{{int 20 80}}", Enabled: true}}, Body: model.Body{Type: "none"}}}},
+			{ID: "f2", Name: "Order", Enabled: true, Weight: 1, Steps: []model.Step{{ID: "s2", Name: "Order", Enabled: true, Method: "POST", URL: "/echo",
+				Body: model.Body{Type: "json", Variants: []model.Variant{{ID: "v", Name: "v", Weight: 1, Enabled: true, Fields: []model.Field{
+					{Key: "user", Type: "string", Value: `{{var "user"}}`},
+					{Key: "qty", Type: "integer", Value: "3"},
+					{Key: "tags", Type: "array", ArrayLen: &model.MinMax{Min: 1, Max: 1}, Children: []model.Field{{Type: "string", Value: "a"}}},
+					{Key: "gift", Type: "boolean", Value: "false", Enabled: &yes},
+				}}}}}}},
+			{ID: "f3", Name: "Form", Enabled: true, Weight: 1, Steps: []model.Step{{ID: "s3", Name: "Form", Enabled: true, Method: "PUT", URL: "https://other.test/x",
+				Body: model.Body{Type: "form", Variants: []model.Variant{{ID: "v", Name: "v", Weight: 1, Enabled: true, Fields: []model.Field{{Key: "a", Type: "string", Value: "{{uuid}}"}}}}}}}},
+		}}
 	return model.Project{Name: "Shop", Description: "p"}, []model.Environment{env}, []model.Test{t}
 }
 

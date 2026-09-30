@@ -210,7 +210,11 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
               <div className="grid gap-2">
                 <Label>Tests</Label>
                 {p.tests.map((t, ti) => (
-                  <Disclosure key={`${t.name}-${ti}`} title={t.name} summary={`${t.requests.length} request${t.requests.length === 1 ? '' : 's'}`}>
+                  <Disclosure
+                    key={`${t.name}-${ti}`}
+                    title={t.name}
+                    summary={`${t.requests.length} request${t.requests.length === 1 ? '' : 's'}${t.thresholds > 0 ? `, ${t.thresholds} pass/fail rule${t.thresholds === 1 ? '' : 's'}` : ''}`}
+                  >
                     <ul className="grid gap-1.5">
                       {t.requests.map((r, i) => (
                         <li key={i} className="flex min-w-0 items-baseline gap-2 text-sm">

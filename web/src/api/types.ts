@@ -396,7 +396,7 @@ export interface ImportPreview {
   format: 'ndswarm' | 'postman'
   project: { name: string; description: string }
   servers: { name: string; baseUrl: string; variables: number }[]
-  tests: { name: string; server: string; requests: { method: string; name: string; url: string }[] }[]
+  tests: { name: string; server: string; requests: { method: string; name: string; url: string }[]; thresholds: number }[]
   warnings: string[]
 }
 

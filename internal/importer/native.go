@@ -49,12 +49,13 @@ type Server struct {
 
 // Test is a test without ids; Server names one of the bundle's servers (or an existing one).
 type Test struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Server      string         `json:"server"`
-	Flows       []model.Flow   `json:"flows"`
-	Load        model.Load     `json:"load"`
-	Settings    model.Settings `json:"settings"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Server      string            `json:"server"`
+	Flows       []model.Flow      `json:"flows"`
+	Load        model.Load        `json:"load"`
+	Settings    model.Settings    `json:"settings"`
+	Thresholds  []model.Threshold `json:"thresholds,omitempty"`
 }
 
 // FromProject builds a native bundle. Every secret value is emptied.
@@ -73,7 +74,7 @@ func FromProject(p model.Project, envs []model.Environment, tests []model.Test) 
 		if t.EnvironmentID != nil {
 			server = names[*t.EnvironmentID]
 		}
-		b.Tests = append(b.Tests, Test{t.Name, t.Description, server, t.Flows, t.Load, t.Settings})
+		b.Tests = append(b.Tests, Test{t.Name, t.Description, server, t.Flows, t.Load, t.Settings, t.Thresholds})
 	}
 	return b
 }
@@ -215,12 +216,17 @@ func (b *Bundle) check() ([]string, error) {
 			flows = append(flows, one.Flows[0])
 		}
 		t.Flows = flows
+		for i := range t.Thresholds {
+			if t.Thresholds[i].ID == "" {
+				t.Thresholds[i].ID = newID()
+			}
+		}
 		mt := t.model()
 		mt.Normalize()
 		if err := mt.Validate(); err != nil {
 			problems = append(problems, fmt.Sprintf("Test %q: %s", t.Name, details(err)))
 		}
-		t.Flows, t.Load, t.Settings = mt.Flows, mt.Load, mt.Settings
+		t.Flows, t.Load, t.Settings, t.Thresholds = mt.Flows, mt.Load, mt.Settings, mt.Thresholds
 	}
 	if len(problems) > 0 {
 		return warns, errors.New("the file cannot be imported. " + strings.Join(problems, " "))
@@ -229,8 +235,7 @@ func (b *Bundle) check() ([]string, error) {
 }
 
 func (t Test) model() model.Test {
-	// Import/export do not carry pass/fail rules yet; every imported test starts with none.
-	return model.Test{Name: t.Name, Description: t.Description, Flows: t.Flows, Load: t.Load, Settings: t.Settings, Thresholds: []model.Threshold{}}
+	return model.Test{Name: t.Name, Description: t.Description, Flows: t.Flows, Load: t.Load, Settings: t.Settings, Thresholds: t.Thresholds}
 }
 
 func details(err error) string {
