@@ -33,6 +33,7 @@ func (s *Server) projectRoutes(r chi.Router) {
 	r.With(view).Get("/tests", s.listAllTests)
 	r.With(view).Get("/projects/{id}/tests", s.listTests)
 	r.With(edit).Post("/projects/{id}/tests", s.createTest)
+	r.With(edit).Post("/projects/{id}/folders/rename", s.renameFolder)
 	r.With(view).Get("/tests/{id}", s.getTest)
 	r.With(edit).Put("/tests/{id}", s.updateTest)
 	r.With(edit).Delete("/tests/{id}", s.deleteTest)
@@ -172,6 +173,17 @@ func (s *Server) deleteTest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) duplicateTest(w http.ResponseWriter, r *http.Request) {
 	if id, ok := pathID(w, r); ok {
 		respond(w, r, http.StatusCreated)(s.Projects.DuplicateTest(r.Context(), id))
+	}
+}
+
+func (s *Server) renameFolder(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	var in struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if ok && readJSON(w, r, &in) {
+		noContent(w, r, s.Projects.RenameFolder(r.Context(), id, in.From, in.To))
 	}
 }
 

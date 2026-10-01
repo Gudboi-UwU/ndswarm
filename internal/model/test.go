@@ -20,6 +20,8 @@ const (
 	MaxTimeoutMs   = 300_000
 	MaxNameLen     = 100
 	DefaultTimeout = 30_000
+	MaxFolderLen   = 300
+	MaxFolderDepth = 8
 )
 
 // Test is what the Test Builder edits. Every string value except names and keys is a template.
@@ -28,6 +30,7 @@ type Test struct {
 	ProjectID     int64       `json:"projectId"`
 	Name          string      `json:"name"`
 	Description   string      `json:"description"`
+	Folder        string      `json:"folder"` // "" = no folder; nested as "Parent / Child"
 	EnvironmentID *int64      `json:"environmentId"`
 	Flows         []Flow      `json:"flows"`
 	Load          Load        `json:"load"`
@@ -112,6 +115,7 @@ func (t *Test) Normalize() {
 	if t.Flows == nil {
 		t.Flows = []Flow{}
 	}
+	t.Folder = NormalizeFolder(t.Folder)
 	t.Thresholds = nonNil(t.Thresholds)
 	t.Load.normalize()
 	for i := range t.Flows {
@@ -141,6 +145,34 @@ func (t *Test) Normalize() {
 	}
 }
 
+// NormalizeFolder trims each " / "-separated segment and drops empty ones, so "a / / b/ " becomes
+// "a / b". Segments otherwise keep whatever the caller wrote, including a literal "/" character.
+func NormalizeFolder(s string) string {
+	raw := strings.Split(s, " / ")
+	segs := make([]string, 0, len(raw))
+	for _, r := range raw {
+		if r = strings.TrimSpace(r); r != "" {
+			segs = append(segs, r)
+		}
+	}
+	return strings.Join(segs, " / ")
+}
+
+// ValidateFolder checks an already-normalized folder path on its own, for use outside a full Test
+// (renaming a folder across many tests).
+func ValidateFolder(folder string) error {
+	var v ValidationError
+	checkFolder(&v, folder)
+	return v.Err()
+}
+
+func checkFolder(v *ValidationError, folder string) {
+	v.Check(utf8.RuneCountInString(folder) <= MaxFolderLen, "folder", fmt.Sprintf("Use at most %d characters.", MaxFolderLen))
+	if folder != "" {
+		v.Check(strings.Count(folder, " / ")+1 <= MaxFolderDepth, "folder", fmt.Sprintf("Use at most %d folder levels.", MaxFolderDepth))
+	}
+}
+
 // nonNil makes JSON show [] instead of null, which the UI relies on.
 func nonNil[T any](s []T) []T {
 	if s == nil {
@@ -161,6 +193,7 @@ func normalizeFields(fs []Field) []Field {
 func (t *Test) Validate() error {
 	var v ValidationError
 	checkName(&v, "name", t.Name)
+	checkFolder(&v, t.Folder)
 	v.Check(len(t.Flows) <= MaxFlows, "flows", fmt.Sprintf("At most %d requests per test.", MaxFlows))
 	t.Load.validate(&v)
 	t.Settings.validate(&v)

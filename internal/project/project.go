@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Gudboi-UwU/ndswarm/internal/model"
 	"github.com/Gudboi-UwU/ndswarm/internal/secret"
@@ -197,6 +198,7 @@ type TestSummary struct {
 	ID            int64  `json:"id"`
 	Name          string `json:"name"`
 	Description   string `json:"description"`
+	Folder        string `json:"folder"`
 	EnvironmentID *int64 `json:"environmentId"`
 	Endpoints     int    `json:"endpoints"`
 	UpdatedAt     int64  `json:"updatedAt"`
@@ -223,7 +225,7 @@ func (s *Service) ListTests(ctx context.Context, projectID int64) ([]TestSummary
 
 func (s *Service) listTests(ctx context.Context, projectID int64) ([]TestSummary, error) {
 	rows, err := s.db.R.QueryContext(ctx, `
-		SELECT t.id, t.name, t.description, t.environment_id, json_array_length(t.config_json, '$.flows'), t.updated_at,
+		SELECT t.id, t.name, t.description, t.folder, t.environment_id, json_array_length(t.config_json, '$.flows'), t.updated_at,
 			t.project_id, p.name, coalesce(e.name, ''), coalesce(json_extract(e.config_json, '$.baseUrl'), ''),
 			(SELECT max(started_at) FROM runs WHERE test_id = t.id)
 		FROM tests t JOIN projects p ON p.id = t.project_id LEFT JOIN environments e ON e.id = t.environment_id
@@ -236,7 +238,7 @@ func (s *Service) listTests(ctx context.Context, projectID int64) ([]TestSummary
 	out := []TestSummary{}
 	for rows.Next() {
 		var t TestSummary
-		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.EnvironmentID, &t.Endpoints, &t.UpdatedAt,
+		if err := rows.Scan(&t.ID, &t.Name, &t.Description, &t.Folder, &t.EnvironmentID, &t.Endpoints, &t.UpdatedAt,
 			&t.ProjectID, &t.ProjectName, &t.TargetName, &t.TargetURL, &t.LastRunAt); err != nil {
 			return nil, err
 		}
@@ -249,8 +251,8 @@ func (s *Service) GetTest(ctx context.Context, id int64) (model.Test, error) {
 	var t model.Test
 	var blob string
 	err := s.db.R.QueryRowContext(ctx,
-		"SELECT id, project_id, environment_id, name, description, config_json, updated_at FROM tests WHERE id = ?", id).
-		Scan(&t.ID, &t.ProjectID, &t.EnvironmentID, &t.Name, &t.Description, &blob, &t.UpdatedAt)
+		"SELECT id, project_id, environment_id, name, description, folder, config_json, updated_at FROM tests WHERE id = ?", id).
+		Scan(&t.ID, &t.ProjectID, &t.EnvironmentID, &t.Name, &t.Description, &t.Folder, &blob, &t.UpdatedAt)
 	if err != nil {
 		return t, notFound(err)
 	}
@@ -314,16 +316,52 @@ func (s *Service) saveTest(ctx context.Context, t model.Test) (model.Test, error
 	}
 	t.UpdatedAt = s.now().UnixMilli()
 	if t.ID == 0 {
-		res, err := s.db.W.ExecContext(ctx, `INSERT INTO tests (project_id, environment_id, name, description, config_json, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?)`, t.ProjectID, t.EnvironmentID, t.Name, t.Description, string(blob), t.UpdatedAt)
+		res, err := s.db.W.ExecContext(ctx, `INSERT INTO tests (project_id, environment_id, name, description, folder, config_json, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, t.ProjectID, t.EnvironmentID, t.Name, t.Description, t.Folder, string(blob), t.UpdatedAt)
 		if err != nil {
 			return t, err
 		}
 		t.ID, _ = res.LastInsertId()
 		return t, nil
 	}
-	return t, affected(s.db.W.ExecContext(ctx, `UPDATE tests SET environment_id = ?, name = ?, description = ?, config_json = ?, updated_at = ?
-		WHERE id = ?`, t.EnvironmentID, t.Name, t.Description, string(blob), t.UpdatedAt, t.ID))
+	return t, affected(s.db.W.ExecContext(ctx, `UPDATE tests SET environment_id = ?, name = ?, description = ?, folder = ?, config_json = ?, updated_at = ?
+		WHERE id = ?`, t.EnvironmentID, t.Name, t.Description, t.Folder, string(blob), t.UpdatedAt, t.ID))
+}
+
+// RenameFolder moves every test in the project whose folder is exactly from, or a subfolder of it,
+// under to. Renaming "" (no folder) is a no-op: there is nothing to match unambiguously.
+func (s *Service) RenameFolder(ctx context.Context, projectID int64, from, to string) error {
+	if _, err := s.GetProject(ctx, projectID); err != nil {
+		return err
+	}
+	from, to = model.NormalizeFolder(from), model.NormalizeFolder(to)
+	if from == "" || from == to {
+		return nil
+	}
+	if err := model.ValidateFolder(to); err != nil {
+		return err
+	}
+	now := s.now().UnixMilli()
+	exact, err := s.db.W.ExecContext(ctx, `UPDATE tests SET folder = ?, updated_at = ? WHERE project_id = ? AND folder = ?`, to, now, projectID, from)
+	if err != nil {
+		return err
+	}
+	prefix := from + " / "
+	// substr/length instead of LIKE: a folder name can itself contain "%" or "_". SQLite's substr
+	// indexes by character, so use the rune count, not the byte length.
+	plen := utf8.RuneCountInString(prefix)
+	sub, err := s.db.W.ExecContext(ctx,
+		`UPDATE tests SET folder = ? || ' / ' || substr(folder, ?), updated_at = ? WHERE project_id = ? AND substr(folder, 1, ?) = ?`,
+		to, plen+1, now, projectID, plen, prefix)
+	if err != nil {
+		return err
+	}
+	n1, _ := exact.RowsAffected()
+	n2, _ := sub.RowsAffected()
+	if n1+n2 == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Service) DuplicateTest(ctx context.Context, id int64) (model.Test, error) {
