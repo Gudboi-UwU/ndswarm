@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import type { EnvVar, Field, FieldType, Flow, Generator, Step, Variant } from '@/api/types'
 
 export const uid = () => crypto.randomUUID().slice(0, 8)
@@ -70,6 +70,16 @@ export function useFieldError(path: string): string | undefined {
 export function hasErrorUnder(errors: Map<string, string>, prefix: string): boolean {
   for (const k of errors.keys()) if (k === prefix || k.startsWith(prefix + '.')) return true
   return false
+}
+
+/** value, `ms` after it stops changing. Used to debounce a background check while typing. */
+export function useDebounced<T>(value: T, ms: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return debounced
 }
 
 const bodyNames: Record<string, string> = { none: 'none', json: 'JSON', form: 'form', multipart: 'multipart form', raw: 'text' }

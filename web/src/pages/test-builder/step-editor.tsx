@@ -42,6 +42,7 @@ export function EndpointEditor({
   }
   const nameErr = errors.get(`${path}.name`) ?? errors.get(`flows.${index}.name`)
   const urlErr = errors.get(`${path}.url`) ?? errors.get(`${path}.method`)
+  const blocked = hasErrorUnder(errors, path)
   const full = fullUrl(baseUrl, step.url)
   const queryCount = step.query.filter((q) => q.enabled).length
   const headerCount = step.headers.filter((h) => h.enabled).length
@@ -64,11 +65,19 @@ export function EndpointEditor({
             </SelectContent>
           </Select>
           <TemplateInput id="ep-url" aria-label="URL" placeholder="/products" value={step.url} onChange={(url) => setStep({ url })} error={urlErr} />
-          <Button type="button" variant="outline" className="col-span-2 sm:col-span-1" disabled={send.isPending} onClick={() => send.mutate({ step, environmentId, variant })}>
+          <Button
+            type="button"
+            variant="outline"
+            className="col-span-2 sm:col-span-1"
+            disabled={send.isPending || blocked}
+            title={blocked ? 'Fix the problems in this request first.' : undefined}
+            onClick={() => send.mutate({ step, environmentId, variant })}
+          >
             <SendIcon />
             {send.isPending ? 'Sending' : 'Send test request'}
           </Button>
         </div>
+        {blocked && <p className="text-sm text-destructive">Fix the problems in this request before sending.</p>}
         {!urlErr && full && isLocalhost(full) && (
           <p className="text-xs text-muted-foreground">
             ndswarm usually runs in Docker, where localhost means the ndswarm container itself. For an API on this computer use{' '}

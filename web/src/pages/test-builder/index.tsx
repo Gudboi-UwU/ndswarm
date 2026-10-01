@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CopyIcon, PencilIcon, PlusIcon, RouteIcon, Trash2Icon } from 'lucide-react'
+import { CircleAlertIcon, CopyIcon, PencilIcon, PlusIcon, RouteIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useBlocker, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { useMe } from '@/api/auth'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
-import type { Environment, Flow, Generator, Project, Test } from '@/api/types'
+import type { Environment, FieldError, Flow, Generator, Project, Test } from '@/api/types'
 import { ExportMenu } from '@/components/export-menu'
 import { ConfirmDelete, EmptyState, ErrorState, useTitle } from '@/components/page'
 import { Button } from '@/components/ui/button'
@@ -17,12 +17,13 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { NotFoundPage } from '../not-found'
-import { BuilderContext, cloneFlow, hasErrorUnder, newEndpoint } from './draft'
+import { BuilderContext, cloneFlow, hasErrorUnder, newEndpoint, useDebounced } from './draft'
 import { LoadEditor, SettingsEditor, ThresholdsEditor, type LoadMemory } from './load-editor'
 import { StartButton } from './start-button'
 import { EndpointEditor } from './step-editor'
 
 const noErrors = new Map<string, string>()
+const noProblems: FieldError[] = []
 
 export default function TestBuilderPage() {
   const id = Number(useParams().id)
@@ -65,6 +66,26 @@ function Builder({ saved }: { saved: Test }) {
   const envs = useQuery({ queryKey: keys.environments(saved.projectId), queryFn: () => api<Environment[]>('GET', `/projects/${saved.projectId}/environments`) })
   const generators = useQuery({ queryKey: keys.generators, queryFn: () => api<Generator[]>('GET', '/tools/generators'), staleTime: Infinity })
   const env = envs.data?.find((e) => e.id === draft.environmentId)
+
+  // Catches templates that cannot be sent: a variable that is not set, a value that would not
+  // render, a typed field that would not fit. Debounced so it does not fire on every keystroke.
+  const checkKey = useDebounced(JSON.stringify({ flows: draft.flows, environmentId: draft.environmentId }), 400)
+  const check = useQuery({
+    queryKey: ['check', saved.id, checkKey],
+    queryFn: () => api<FieldError[]>('POST', '/tests/check', { test: draft, environmentId: draft.environmentId }),
+    enabled: draft.flows.length > 0,
+    staleTime: 0,
+  })
+  const problems = check.data ?? noProblems
+  const problemErrors = useMemo(() => new Map(problems.map((p) => [p.path, p.message])), [problems])
+  // Save/Try errors win while the draft is dirty; check problems are always relevant.
+  const combinedErrors = useMemo(() => {
+    if (problemErrors.size === 0) return shownErrors
+    const m = new Map(problemErrors)
+    for (const [k, v] of shownErrors) m.set(k, v)
+    return m
+  }, [shownErrors, problemErrors])
+  const problemFlows = useMemo(() => [...new Set(problems.map((p) => Number(/^flows\.(\d+)/.exec(p.path)?.[1])).filter((n) => !Number.isNaN(n)))].sort((a, b) => a - b), [problems])
 
   const save = useMutation({
     mutationFn: () => api<Test>('PUT', `/tests/${saved.id}`, draft),
@@ -121,8 +142,8 @@ function Builder({ saved }: { saved: Test }) {
     setSelected(flows.length)
   }
   const ctx = useMemo(
-    () => ({ errors: shownErrors, environmentId: draft.environmentId, baseUrl: env?.baseUrl ?? '', variables: env?.variables ?? [], generators: generators.data ?? [], readOnly }),
-    [shownErrors, draft.environmentId, env, generators.data, readOnly],
+    () => ({ errors: combinedErrors, environmentId: draft.environmentId, baseUrl: env?.baseUrl ?? '', variables: env?.variables ?? [], generators: generators.data ?? [], readOnly }),
+    [combinedErrors, draft.environmentId, env, generators.data, readOnly],
   )
 
   useTitle(draft.name, 'Test')
@@ -137,7 +158,7 @@ function Builder({ saved }: { saved: Test }) {
               Projects
             </Link>
             {' / '}
-            <Link to={`/projects/${saved.projectId}`} className="hover:text-foreground">
+            <Link to={`/projects/${saved.projectId}`} state={{ openTestId: saved.id }} className="hover:text-foreground">
               {project.data?.name ?? '...'}
             </Link>
             {draft.folder &&
@@ -204,7 +225,15 @@ function Builder({ saved }: { saved: Test }) {
                 <StartButton
                   testId={saved.id}
                   size="sm"
-                  blockedReason={flows.length === 0 ? 'Add a request first.' : flows.every((f) => !f.enabled) ? 'Turn on at least one request.' : undefined}
+                  blockedReason={
+                    flows.length === 0
+                      ? 'Add a request first.'
+                      : flows.every((f) => !f.enabled)
+                        ? 'Turn on at least one request.'
+                        : problems.length > 0
+                          ? `Fix ${problems.length} problem${problems.length > 1 ? 's' : ''} before running.`
+                          : undefined
+                  }
                   // Running always uses the saved test, so unsaved edits are saved first.
                   beforeStart={dirty && !readOnly ? async () => (await save.mutateAsync().then(() => true, () => false)) : undefined}
                 />
@@ -215,15 +244,42 @@ function Builder({ saved }: { saved: Test }) {
           {env && !env.baseUrl && <p className="text-sm text-muted-foreground">{env.name} has no address, so every request needs a full URL.</p>}
         </header>
 
+        {problems.length > 0 && (
+          <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <CircleAlertIcon className="size-4 shrink-0" aria-hidden="true" />
+            <span>
+              {problems.length} problem{problems.length > 1 ? 's' : ''}: fix {problems.length > 1 ? 'them' : 'it'} before sending.
+            </span>
+            {problemFlows.length > 0 && (
+              <div className="ml-auto flex flex-wrap gap-1.5">
+                {problemFlows.map((i) => (
+                  <Button
+                    key={i}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setTab('endpoints')
+                      setSelected(i)
+                    }}
+                  >
+                    {flows[i]?.name ?? `Request ${i + 1}`}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
-            <TabsTrigger value="endpoints" className={cn(hasErrorUnder(shownErrors, 'flows') && 'text-destructive')}>
+            <TabsTrigger value="endpoints" className={cn(hasErrorUnder(combinedErrors, 'flows') && 'text-destructive')}>
               Requests
             </TabsTrigger>
-            <TabsTrigger value="load" className={cn((hasErrorUnder(shownErrors, 'load') || hasErrorUnder(shownErrors, 'thresholds')) && 'text-destructive')}>
+            <TabsTrigger value="load" className={cn((hasErrorUnder(combinedErrors, 'load') || hasErrorUnder(combinedErrors, 'thresholds')) && 'text-destructive')}>
               Load & rules{draft.thresholds.length > 0 && <span className="ml-1 text-muted-foreground">({draft.thresholds.length})</span>}
             </TabsTrigger>
-            <TabsTrigger value="settings" className={cn(hasErrorUnder(shownErrors, 'settings') && 'text-destructive')}>
+            <TabsTrigger value="settings" className={cn(hasErrorUnder(combinedErrors, 'settings') && 'text-destructive')}>
               Options
             </TabsTrigger>
           </TabsList>
@@ -284,7 +340,7 @@ function Builder({ saved }: { saved: Test }) {
                           onCheckedChange={(on) => setFlows(flows.map((x, j) => (j === i ? { ...x, enabled: on, steps: [{ ...x.steps[0], enabled: on }] } : x)))}
                         />
                         <button type="button" onClick={() => setSelected(i)} className="min-w-0 text-left" aria-current={i === sel ? 'true' : undefined}>
-                          <span className={cn('flex items-center gap-1.5 text-sm', !f.enabled && 'text-muted-foreground line-through', hasErrorUnder(shownErrors, `flows.${i}`) && 'text-destructive')}>
+                          <span className={cn('flex items-center gap-1.5 text-sm', !f.enabled && 'text-muted-foreground line-through', hasErrorUnder(combinedErrors, `flows.${i}`) && 'text-destructive')}>
                             <span className="w-12 shrink-0 font-mono text-xs text-muted-foreground">{s.method}</span>
                             <span className="truncate font-medium">{f.name}</span>
                           </span>
