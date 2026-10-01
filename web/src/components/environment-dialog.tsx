@@ -36,6 +36,9 @@ export function EnvironmentDialog({
       await queryClient.invalidateQueries({ queryKey: keys.environments(projectId) })
       // The project's tests show this server's address, so they need refreshing too.
       await queryClient.invalidateQueries({ queryKey: keys.tests(projectId) })
+      // A builder open on a test using this server has its template check cached by flows +
+      // environmentId only, so a variable/baseUrl/auth edit here would otherwise look stale there.
+      await queryClient.invalidateQueries({ queryKey: ['check'] })
       toast.success(env ? `Saved ${e.name}` : `Created ${e.name}`)
       onOpenChange(false)
     },

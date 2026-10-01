@@ -69,6 +69,8 @@ function Builder({ saved }: { saved: Test }) {
 
   // Catches templates that cannot be sent: a variable that is not set, a value that would not
   // render, a typed field that would not fit. Debounced so it does not fire on every keystroke.
+  // Keyed by flows+environmentId only: a secret variable's displayed value is always masked, so
+  // it can't detect an edit by itself. The environment dialog invalidates ['check'] on save instead.
   const checkKey = useDebounced(JSON.stringify({ flows: draft.flows, environmentId: draft.environmentId }), 400)
   const check = useQuery({
     queryKey: ['check', saved.id, checkKey],
