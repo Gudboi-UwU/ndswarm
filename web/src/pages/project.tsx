@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, DownloadIcon, EllipsisIcon, FileUpIcon, FlaskConicalIcon, FolderIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from 'lucide-react'
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { useMe } from '@/api/auth'
@@ -266,11 +266,16 @@ function TestsTab({ projectId, canEdit, onNew, autoOpenTestId }: { projectId: nu
     })
   }
   // Auto-open the folder holding the test we came back from, once (does not fight a later collapse).
+  // Guarded by a ref, not just the effect deps: tests.data gets a new array identity on every
+  // background refetch (window focus, etc.), which would otherwise re-run this and silently
+  // reopen a folder the user just collapsed.
+  const autoOpenedFor = useRef<number | undefined>(undefined)
   useEffect(() => {
-    if (!autoOpenTestId || !tests.data) return
+    if (!autoOpenTestId || !tests.data || autoOpenedFor.current === autoOpenTestId) return
     const { tops } = buildFolderTree(tests.data)
     const chain = ancestorPaths(tops, autoOpenTestId)
     if (chain.length === 0) return
+    autoOpenedFor.current = autoOpenTestId
     // eslint-disable-next-line react/set-state-in-effect -- syncs from a one-time route transition, not a loop
     setOpen((prev) => {
       const next = new Set(prev)
