@@ -44,9 +44,9 @@ func TestRunLifecycle(t *testing.T) {
 		t.Errorf("422 without preflight: %v", out)
 	}
 	broken := mkTest(flow("tmpl", "/fast?x={{int 9 1}}"), 1)
-	out = admin.expect("POST", fmt.Sprintf("/tests/%v/runs", broken), `{"force":true}`, 422)
-	if errs := out["preflight"].(map[string]any)["errors"].([]any); len(errs) != 1 || !strings.Contains(errs[0].(string), "min must be <= max") {
-		t.Errorf("render error must block even with force: %v", out)
+	out = admin.expect("POST", fmt.Sprintf("/tests/%v/runs", broken), `{"force":true}`, 400)
+	if probs := out["problems"].([]any); len(probs) != 1 || !strings.Contains(probs[0].(map[string]any)["message"].(string), "min must be <= max") {
+		t.Errorf("template problems must block even with force: %v", out)
 	}
 
 	// Start, watch ticks over WebSocket, reject a second start, stop.

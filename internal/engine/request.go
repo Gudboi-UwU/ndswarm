@@ -220,12 +220,18 @@ func (s *Step) render(c *tmpl.Ctx, vi int) (*Request, error) {
 }
 
 func (s *Step) resolve(raw string) (*url.URL, error) {
+	return ResolveURL(raw, s.baseURL)
+}
+
+// ResolveURL builds the final request URL from a rendered template result and the environment's
+// base URL (empty when the test has no environment, or the environment has no address).
+func ResolveURL(raw, baseURL string) (*url.URL, error) {
 	raw = strings.TrimSpace(raw)
 	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
-		if s.baseURL == "" {
+		if baseURL == "" {
 			return nil, fmt.Errorf("url %q is relative but the environment has no base URL", raw)
 		}
-		raw = s.baseURL + "/" + strings.TrimLeft(raw, "/")
+		raw = strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(raw, "/")
 	}
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {

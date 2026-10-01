@@ -50,6 +50,14 @@ func (r *Runner) preflight(ctx context.Context, testID int64) (Preflight, *engin
 		}
 		return pf, nil, t, env, err
 	}
+	sc, red, err := engine.SampleCtx(env)
+	if err != nil {
+		pf.Errors = append(pf.Errors, "Environment "+err.Error())
+		return pf, nil, t, env, nil
+	}
+	if problems := engine.CheckTest(t, env, sc, red); len(problems) > 0 {
+		return pf, nil, t, env, CheckError{problems}
+	}
 	plan, err := engine.NewPlan(t, env)
 	if err != nil {
 		pf.Errors = append(pf.Errors, err.Error())

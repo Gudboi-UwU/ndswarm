@@ -34,6 +34,13 @@ type PreflightError struct{ Result Preflight }
 
 func (e PreflightError) Error() string { return "preflight did not pass" }
 
+// CheckError is returned when a test's templates have problems (unset variables, a value that
+// cannot render, a typed field that would not fit, a URL that cannot be resolved). Unlike
+// PreflightError there is no "run anyway": nothing would be sent.
+type CheckError struct{ Problems []model.FieldError }
+
+func (e CheckError) Error() string { return "the test has template problems" }
+
 // Publisher receives live messages for WebSocket subscribers.
 type Publisher interface {
 	Publish(runID int64, msg any)

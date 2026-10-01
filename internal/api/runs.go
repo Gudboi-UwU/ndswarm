@@ -24,9 +24,17 @@ func (s *Server) runRoutes(r chi.Router) {
 }
 
 func (s *Server) preflight(w http.ResponseWriter, r *http.Request) {
-	if id, ok := pathID(w, r); ok {
-		respond(w, r, http.StatusOK)(s.Runner.Preflight(r.Context(), id))
+	id, ok := pathID(w, r)
+	if !ok {
+		return
 	}
+	pf, err := s.Runner.Preflight(r.Context(), id)
+	var chk runner.CheckError
+	if errors.As(err, &chk) {
+		writeCheckFailed(w, chk)
+		return
+	}
+	respond(w, r, http.StatusOK)(pf, err)
 }
 
 func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
@@ -44,12 +52,15 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	runID, err := s.Runner.Start(r.Context(), id, who, in.Force)
 	var active runner.ActiveError
 	var pf runner.PreflightError
+	var chk runner.CheckError
 	switch {
 	case errors.As(err, &active):
 		writeJSON(w, http.StatusConflict, map[string]any{
 			"error": map[string]string{"code": "run_active", "message": "A test is already running."},
 			"runId": active.RunID,
 		})
+	case errors.As(err, &chk):
+		writeCheckFailed(w, chk)
 	case errors.As(err, &pf):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 			"error":     map[string]string{"code": "preflight", "message": "Preflight found problems."},
@@ -60,6 +71,15 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusCreated, map[string]int64{"id": runID})
 	}
+}
+
+// writeCheckFailed refuses a run whose templates have problems. Unlike a preflight warning there
+// is no "run anyway", so it is a plain 400 with the same shape as POST /tests/check.
+func writeCheckFailed(w http.ResponseWriter, chk runner.CheckError) {
+	writeJSON(w, http.StatusBadRequest, map[string]any{
+		"error":    map[string]string{"code": "check_failed", "message": "This test cannot run until these problems are fixed."},
+		"problems": nonNilProblems(chk.Problems),
+	})
 }
 
 func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {

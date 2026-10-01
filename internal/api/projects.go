@@ -43,6 +43,7 @@ func (s *Server) projectRoutes(r chi.Router) {
 	r.With(view).Get("/tools/generators", s.generators)
 	r.With(edit).Post("/tools/render", s.render)
 	r.With(edit).Post("/tools/try", s.try)
+	r.With(edit).Post("/tests/check", s.checkTest)
 }
 
 // ---- projects
@@ -206,25 +207,19 @@ func (s *Server) generators(w http.ResponseWriter, _ *http.Request) {
 
 // toolEnv loads the environment for a tool call and prepares a render context with its variables.
 func (s *Server) toolEnv(ctx context.Context, envID *int64) (*model.Environment, *tmpl.Ctx, engine.Redactor, error) {
-	c := tmpl.NewCtx(uint64(time.Now().UnixNano()), nil, nil)
 	if envID == nil {
-		return nil, c, engine.NewRedactor(nil), nil
+		c, red, _ := engine.SampleCtx(nil)
+		return nil, c, red, nil
 	}
 	e, err := s.Projects.GetEnvironment(ctx, *envID)
 	if err != nil {
 		return nil, nil, engine.Redactor{}, model.ValidationError{{Path: "environmentId", Message: "That environment no longer exists."}}
 	}
-	vars, err := engine.EnvVars(&e, c)
+	c, red, err := engine.SampleCtx(&e)
 	if err != nil {
 		return nil, nil, engine.Redactor{}, model.ValidationError{{Path: "environmentId", Message: err.Error()}}
 	}
-	secrets := e.SecretValues()
-	for k, v := range vars {
-		if e.SecretVar(k) {
-			secrets = append(secrets, v)
-		}
-	}
-	return &e, c, engine.NewRedactor(secrets), nil
+	return &e, c, red, nil
 }
 
 // render previews a template: five samples, or the error a user would hit at run time.
@@ -329,6 +324,35 @@ func (s *Server) try(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// checkTest finds template problems in a test draft (parse errors, unset variables, values that
+// would not render or fit their type) without sending any HTTP requests. Used by the builder to
+// mark broken inputs red as the user types.
+func (s *Server) checkTest(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Test          model.Test `json:"test"`
+		EnvironmentID *int64     `json:"environmentId"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	in.Test.Normalize()
+	env, c, red, err := s.toolEnv(r.Context(), in.EnvironmentID)
+	if err != nil {
+		fail(w, r, err)
+		return
+	}
+	problems := engine.CheckTest(in.Test, env, c, red)
+	writeJSON(w, http.StatusOK, nonNilProblems(problems))
+}
+
+// nonNilProblems makes JSON show [] instead of null for an empty result.
+func nonNilProblems(p []model.FieldError) []model.FieldError {
+	if p == nil {
+		return []model.FieldError{}
+	}
+	return p
 }
 
 func shownBody(b []byte) string {
