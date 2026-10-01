@@ -71,6 +71,50 @@ func TestRenameFolder(t *testing.T) {
 	}
 }
 
+// TestRenameFolderToRoot checks that renaming a folder with subfolders to "" (move to root) does
+// not leave subfolder tests with a stray leading " / " (e.g. " / Sale_1"). ListTests reads the
+// stored folder column directly (unlike GetTest, it does not run it through Normalize), so a bad
+// write here would otherwise reach the project page as a blank folder heading.
+func TestRenameFolderToRoot(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	box, _ := secret.New(make([]byte, 32))
+	s := New(db, box)
+	p, _ := s.CreateProject(ctx, model.Project{Name: "P"})
+	mk := func(name, folder string) model.Test {
+		tt, err := s.CreateTest(ctx, model.Test{ProjectID: p.ID, Name: name, Folder: folder, Settings: model.DefaultSettings,
+			Flows: []model.Flow{{ID: "f", Name: "f", Enabled: true, Weight: 1, Steps: []model.Step{{ID: "s", Name: "s", Enabled: true, Method: "GET", URL: "/x", Body: model.Body{Type: "none"}}}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tt
+	}
+	direct := mk("A", "Deals")
+	sub := mk("B", "Deals / Sale_1")
+
+	if err := s.RenameFolder(ctx, p.ID, "Deals", ""); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ListTests(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[int64]string{}
+	for _, ts := range list {
+		byID[ts.ID] = ts.Folder
+	}
+	if got := byID[direct.ID]; got != "" {
+		t.Errorf("direct: got %q, want \"\"", got)
+	}
+	if got := byID[sub.ID]; got != "Sale_1" {
+		t.Errorf("subfolder: got %q, want \"Sale_1\"", got)
+	}
+}
+
 // TestMoveTest checks that moving a test to a folder changes only its folder, not its flows.
 func TestMoveTest(t *testing.T) {
 	ctx := context.Background()

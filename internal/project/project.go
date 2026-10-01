@@ -350,9 +350,12 @@ func (s *Service) RenameFolder(ctx context.Context, projectID int64, from, to st
 	// substr/length instead of LIKE: a folder name can itself contain "%" or "_". SQLite's substr
 	// indexes by character, so use the rune count, not the byte length.
 	plen := utf8.RuneCountInString(prefix)
+	// to == "" (move to root): just drop the "from / " prefix, no "to || ' / ' ||" or the result
+	// would start with a stray " / " (e.g. " / Sale_1" instead of "Sale_1").
 	sub, err := s.db.W.ExecContext(ctx,
-		`UPDATE tests SET folder = ? || ' / ' || substr(folder, ?), updated_at = ? WHERE project_id = ? AND substr(folder, 1, ?) = ?`,
-		to, plen+1, now, projectID, plen, prefix)
+		`UPDATE tests SET folder = CASE WHEN ? = '' THEN substr(folder, ?) ELSE ? || ' / ' || substr(folder, ?) END, updated_at = ?
+			WHERE project_id = ? AND substr(folder, 1, ?) = ?`,
+		to, plen+1, to, plen+1, now, projectID, plen, prefix)
 	if err != nil {
 		return err
 	}
