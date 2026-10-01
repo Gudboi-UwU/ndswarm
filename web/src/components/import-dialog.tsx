@@ -273,7 +273,7 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
                 <Label>Tests</Label>
                 {groupByFolder(p.tests).map((group, gi) => (
                   <div key={gi} className="grid gap-2">
-                    {group.folder && <p className="mt-1 text-xs font-semibold text-muted-foreground first:mt-0">{group.folder}</p>}
+                    {group.folder && <h4 className="mt-1 text-xs font-semibold text-muted-foreground first:mt-0">{group.folder}</h4>}
                     {group.tests.map((t, ti) => (
                       <Disclosure
                         key={`${t.name}-${ti}`}

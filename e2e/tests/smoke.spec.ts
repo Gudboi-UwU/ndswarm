@@ -123,26 +123,34 @@ test('import a Postman collection and export it back out', async ({ page }) => {
   await dialog.locator('input[type="file"]:not([aria-label])').setInputFiles('fixtures/shop.postman_collection.json')
   await dialog.getByRole('button', { name: 'Next' }).click()
 
+  // The default split, one test per folder, is already selected: Orders (direct requests) and its
+  // Admin subfolder become two tests that share the folder "Orders".
+  await expect(dialog.getByRole('radio', { name: 'One test per folder' })).toBeChecked()
+
   // Preview: format, tests and their request counts, warnings.
-  await expect(dialog.getByText(/Found a Postman collection with 3 tests and 9 requests/)).toBeVisible()
+  await expect(dialog.getByText(/Found a Postman collection with 4 tests and 9 requests/)).toBeVisible()
   // Each test is a <summary> line "<name> <n> requests"; scope to those so "Shop API" (also the
   // server name) and "Auth" (also a request URL) don't match elsewhere in the dialog.
   const summaries = dialog.locator('summary')
   await expect(summaries.filter({ hasText: 'Auth' })).toContainText('2 requests')
-  await expect(summaries.filter({ hasText: 'Orders' })).toContainText('6 requests')
+  await expect(summaries.filter({ hasText: 'Orders' })).toContainText('5 requests')
+  await expect(summaries.filter({ hasText: 'Admin' })).toContainText('1 request')
   await expect(summaries.filter({ hasText: 'Shop API' })).toContainText('1 request')
+  // The folder heading "Orders" groups the Orders and Admin tests in the preview.
+  await expect(dialog.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible()
   await expect(dialog.getByText(/5 things could not be imported exactly/)).toBeVisible()
 
-  await dialog.getByRole('button', { name: 'Import 3 tests' }).click()
+  await dialog.getByRole('button', { name: 'Import 4 tests' }).click()
   await expect(page).toHaveURL(/\/projects\/\d+$/)
   const projectUrl = page.url()
 
   await expect(page.getByRole('link', { name: 'Auth', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Orders', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Admin', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Shop API', exact: true })).toBeVisible()
 
   await page.getByRole('link', { name: 'Orders', exact: true }).click()
-  await expect(page.getByRole('list', { name: 'Requests' }).getByRole('listitem')).toHaveCount(6)
+  await expect(page.getByRole('list', { name: 'Requests' }).getByRole('listitem')).toHaveCount(5)
 
   await page.goto(projectUrl)
   const download = page.waitForEvent('download')
@@ -167,4 +175,40 @@ test('import a Postman collection and export it back out', async ({ page }) => {
   const body = await preview.json()
   const requestTotal = (body.tests as { requests: unknown[] }[]).reduce((n, t) => n + t.requests.length, 0)
   expect(requestTotal).toBe(9)
+})
+
+// A folder that only holds subfolders (Catalog) should not become a test itself, and a folder with
+// both direct requests and a subfolder (Orders) should split into two tests sharing its folder.
+test('import a nested Postman collection with one test per folder', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Username').fill('admin')
+  await page.getByLabel('Password').fill('e2e-password')
+  await page.getByRole('button', { name: 'Log in' }).click()
+  await expect(page).not.toHaveURL(/\/login$/)
+
+  await page.goto('/projects')
+  await page.getByRole('button', { name: 'Import' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('input[type="file"]:not([aria-label])').setInputFiles('fixtures/nested.postman_collection.json')
+  await dialog.getByRole('button', { name: 'Next' }).click()
+
+  await expect(dialog.getByText(/Found a Postman collection with 4 tests and 4 requests/)).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Catalog', exact: true })).toBeVisible()
+  await expect(dialog.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible()
+  const summaries = dialog.locator('summary')
+  await expect(summaries.filter({ hasText: 'Search' })).toContainText('1 request')
+  await expect(summaries.filter({ hasText: 'Filters' })).toContainText('1 request')
+  await expect(summaries.filter({ hasText: 'Orders' })).toContainText('1 request')
+  await expect(summaries.filter({ hasText: 'Admin' })).toContainText('1 request')
+
+  await dialog.getByRole('button', { name: 'Import 4 tests' }).click()
+  await expect(page).toHaveURL(/\/projects\/\d+$/)
+
+  // The project page's Tests tab groups them under the same two folder headings, open by default.
+  await expect(page.getByText('Catalog', { exact: true })).toBeVisible()
+  await expect(page.getByText('Orders', { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Search', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Filters', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Orders', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Admin', exact: true })).toBeVisible()
 })

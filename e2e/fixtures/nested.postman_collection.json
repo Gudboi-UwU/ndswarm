@@ -1,0 +1,38 @@
+{
+  "info": {
+    "name": "Nested API",
+    "description": "A small collection with a folder that only holds subfolders, and a folder with both direct requests and a subfolder.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Catalog",
+      "item": [
+        {
+          "name": "Search",
+          "item": [
+            { "name": "Find items", "request": { "method": "GET", "header": [], "url": { "raw": "https://api.nested.test/search", "host": ["api", "nested", "test"], "path": ["search"] } } }
+          ]
+        },
+        {
+          "name": "Filters",
+          "item": [
+            { "name": "List filters", "request": { "method": "GET", "header": [], "url": { "raw": "https://api.nested.test/filters", "host": ["api", "nested", "test"], "path": ["filters"] } } }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        { "name": "List orders", "request": { "method": "GET", "header": [], "url": { "raw": "https://api.nested.test/orders", "host": ["api", "nested", "test"], "path": ["orders"] } } },
+        {
+          "name": "Admin",
+          "item": [
+            { "name": "Cancel order", "request": { "method": "DELETE", "header": [], "url": { "raw": "https://api.nested.test/orders/:id", "host": ["api", "nested", "test"], "path": ["orders", ":id"] } } }
+          ]
+        }
+      ]
+    }
+  ]
+}
