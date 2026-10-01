@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { NotFoundPage } from '../not-found'
 import { BuilderContext, cloneFlow, hasErrorUnder, newEndpoint } from './draft'
-import { LoadEditor, SettingsEditor, ThresholdsEditor } from './load-editor'
+import { LoadEditor, SettingsEditor, ThresholdsEditor, type LoadMemory } from './load-editor'
 import { StartButton } from './start-button'
 import { EndpointEditor } from './step-editor'
 
@@ -53,6 +53,7 @@ function Builder({ saved }: { saved: Test }) {
   const [draft, setDraft] = useState<Test>(() => structuredClone(saved))
   const [baseline, setBaseline] = useState(() => JSON.stringify(saved))
   const [selected, setSelected] = useState(0)
+  const [loadMemory, setLoadMemory] = useState<LoadMemory>({})
   const [errors, setErrors] = useState<Map<string, string>>(new Map())
   const [deleting, setDeleting] = useState<number | null>(null)
   const [tab, setTab] = useState('endpoints')
@@ -222,7 +223,7 @@ function Builder({ saved }: { saved: Test }) {
           <TabsContent value="load" className="mt-6">
             <fieldset disabled={readOnly} className="min-w-0 max-w-3xl">
               <legend className="sr-only">Load</legend>
-              <LoadEditor load={draft.load} onChange={(load) => setDraft((d) => ({ ...d, load }))} />
+              <LoadEditor load={draft.load} onChange={(load) => setDraft((d) => ({ ...d, load }))} memory={loadMemory} onMemory={setLoadMemory} />
               <ThresholdsEditor thresholds={draft.thresholds} onChange={(thresholds) => setDraft((d) => ({ ...d, thresholds }))} />
             </fieldset>
           </TabsContent>

@@ -28,6 +28,8 @@ interface Props {
   onPick?: (x: number) => void
   /** Live data: the idle legend shows the latest second. Otherwise it shows the average. */
   live?: boolean
+  /** Text shown instead of the legend values while nothing is hovered (e.g. a plan preview). */
+  idle?: string
 }
 
 const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -36,7 +38,7 @@ const cssVar = (name: string) => getComputedStyle(document.documentElement).getP
  * One-axis time series (uPlot). Hovering shows a crosshair and the values in the legend,
  * which also names every series, so identity never rests on color alone.
  */
-export function TimeChart({ title, data, series, unit = '', height = 200, digits = 1, xMax, onPick, live = true }: Props) {
+export function TimeChart({ title, data, series, unit = '', height = 200, digits = 1, xMax, onPick, live = true, idle }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const plot = useRef<uPlot | null>(null)
   const latest = useRef(data)
@@ -112,7 +114,7 @@ export function TimeChart({ title, data, series, unit = '', height = 200, digits
     <figure className="min-w-0">
       <figcaption className="mb-2 grid gap-1">
         <span className="text-sm font-medium">{title}</span>
-        <Legend data={data} series={series} idx={hover} unit={unit} digits={digits} dark={dark} live={live} />
+        {idle && hover === null ? <span className="text-xs text-muted-foreground">{idle}</span> : <Legend data={data} series={series} idx={hover} unit={unit} digits={digits} dark={dark} live={live} />}
       </figcaption>
       <div ref={host} className={cn('ndswarm-chart w-full', onPick && '[&_.u-over]:cursor-pointer')} role="img" aria-label={`${title} over time`} />
     </figure>

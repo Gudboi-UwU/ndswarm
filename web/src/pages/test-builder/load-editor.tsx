@@ -42,18 +42,29 @@ function simpleShape(l: Load): { users: number; ramp: number; total: number } | 
   return null
 }
 
+/** Survives tab switches (the parent keeps it): the chosen mode and the load each mode last had. */
+export type LoadMemory = { custom?: boolean; simple?: Load; customLoad?: Load }
+
 /**
  * Two levels: a simple form (users, length, ramp-up) that covers most tests, and custom
- * stages with patterns for spikes and steps. Virtual users move linearly between stage targets.
+ * stages with patterns for spikes and steps. Simulated users move linearly between stage targets.
+ * Switching modes keeps what each mode had, so going back and forth loses nothing; the mode
+ * shown when saving is the one that runs.
  */
-export function LoadEditor({ load, onChange }: { load: Load; onChange: (l: Load) => void }) {
+export function LoadEditor({ load, onChange, memory, onMemory }: { load: Load; onChange: (l: Load) => void; memory: LoadMemory; onMemory: (m: LoadMemory) => void }) {
   const { readOnly } = useBuilder()
-  const [custom, setCustom] = useState(() => simpleShape(load) === null)
   const simple = simpleShape(load)
-  const peak = Math.max(...load.stages.map((s) => s.target), 10)
+  const custom = memory.custom ?? simple === null
   const choose = (toCustom: boolean) => {
-    if (!toCustom && !simple) onChange({ ...load, stages: [{ durationSec: 10, target: peak }, { durationSec: 50, target: peak }], maxVUs: peak })
-    setCustom(toCustom)
+    if (toCustom === custom) return
+    const next: LoadMemory = { ...memory, custom: toCustom, ...(custom ? { customLoad: load } : { simple: load }) }
+    const back = toCustom ? next.customLoad : next.simple
+    if (back) onChange({ ...load, stages: back.stages, maxVUs: back.maxVUs })
+    else if (!toCustom && !simple) {
+      const peak = Math.max(...load.stages.map((s) => s.target), 10)
+      onChange({ ...load, stages: [{ durationSec: 10, target: peak }, { durationSec: 50, target: peak }], maxVUs: peak })
+    }
+    onMemory(next)
   }
   return (
     <div className="grid gap-6">
@@ -80,11 +91,12 @@ export function LoadEditor({ load, onChange }: { load: Load; onChange: (l: Load)
               </button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">{custom ? 'Spikes, steps, ramping down.' : 'Users, length and ramp-up.'}</p>
+          <p className="max-w-64 text-xs text-muted-foreground">
+            {custom ? 'Spikes, steps, ramping down.' : 'Users, length and ramp-up.'} Switching keeps what you set in each; the one shown when you save is the one that runs.
+          </p>
         </div>
       </div>
       {!custom && simple ? <SimpleLoad load={load} shape={simple} onChange={onChange} /> : <CustomLoad load={load} onChange={onChange} />}
-      {custom && simple === null && <p className="text-sm text-muted-foreground">Switching to Simple replaces these stages with one ramp-up and a steady part.</p>}
     </div>
   )
 }
@@ -151,7 +163,7 @@ function SimpleLoad({ load, shape, onChange }: { load: Load; shape: { users: num
         Starts with 0 users, reaches <strong>{shape.users}</strong> after <strong>{duration(shape.ramp)}</strong>, then keeps {shape.users === 1 ? 'it' : 'them'} busy for{' '}
         <strong>{duration(hold)}</strong>. Total <strong>{duration(shape.total)}</strong>.
       </p>
-      <TimeChart title="Planned users over time" data={[[0, shape.ramp, shape.total], [0, shape.users, shape.users]]} series={PREVIEW} digits={0} height={140} />
+      <TimeChart title="Planned users over time" data={[[0, shape.ramp, shape.total], [0, shape.users, shape.users]]} series={PREVIEW} digits={0} height={140} idle={`Peak ${shape.users} users, total ${formatElapsed(shape.total)}. Hover for details.`} />
     </div>
   )
 }
@@ -163,15 +175,16 @@ function SimpleLoad({ load, shape, onChange }: { load: Load; shape: { users: num
  * enforce bounds (and this always snaps the shown text back to the committed value first, so
  * an invalid or empty field never stays that way after leaving it).
  */
-function LoadNumberInput({ id, value, min, invalid, onCommit, onBlur }: { id: string; value: number; min?: number; invalid?: boolean; onCommit: (v: number) => void; onBlur: () => void }) {
+function LoadNumberInput({ id, ariaLabel, className, value, min, invalid, onCommit, onBlur }: { id?: string; ariaLabel?: string; className?: string; value: number; min?: number; invalid?: boolean; onCommit: (v: number) => void; onBlur: () => void }) {
   const [state, setState] = useState(() => ({ value, text: String(value) }))
   if (state.value !== value) setState({ value, text: String(value) })
   return (
     <Input
       id={id}
+      aria-label={ariaLabel}
       type="number"
       min={min}
-      className="font-mono"
+      className={cn('font-mono', className)}
       value={state.text}
       aria-invalid={invalid ? true : undefined}
       onChange={(e) => {
@@ -330,14 +343,18 @@ export function ThresholdsEditor({ thresholds, onChange }: { thresholds: Thresho
 
 function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => void }) {
   const { errors, readOnly } = useBuilder()
+  const [pattern, setPattern] = useState('Load')
   const [peak, setPeak] = useState(() => Math.max(...load.stages.map((s) => s.target), 10))
+  const preset = presets.find((p) => p.name === pattern) ?? presets[1]
   const stages = load.stages
   // Stages have no id of their own (the server model is just duration + target), so React keys
-  // are tracked here, client-side only, and kept in step with add/remove below. A pattern button
+  // are tracked here, client-side only, and kept in step with add/remove below. A pattern
   // replaces the whole array, so a length mismatch there just gets fresh ids.
   const [ids, setIds] = useState<string[]>(() => stages.map(() => uid()))
   if (ids.length !== stages.length) setIds(stages.map(() => uid()))
-  const setStages = (next: Stage[]) => onChange({ ...load, stages: next, maxVUs: Math.max(load.maxVUs, ...next.map((s) => s.target)) })
+  // The user cap follows the stages: it only exists so no stage goes above it, so keeping it at
+  // the highest stage is what everyone wants, and there is no separate field to keep in sync.
+  const setStages = (next: Stage[]) => onChange({ ...load, stages: next, maxVUs: Math.max(1, ...next.map((s) => s.target)) })
   const update = (i: number, patch: Partial<Stage>) => setStages(stages.map((s, j) => (j === i ? { ...s, ...patch } : s)))
   const addStage = () => {
     setIds([...ids, uid()])
@@ -356,59 +373,82 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
     xs.push(at)
     ys.push(s.target)
   }
+  const top = Math.max(0, ...ys)
 
   return (
     <div className="grid gap-8">
-      <section className="grid gap-3">
-        <h3 className="text-sm font-medium">Start from a pattern</h3>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="grid gap-2">
-            <Label htmlFor="peak">Highest number of users</Label>
-            <Input id="peak" type="number" min={1} className="w-28 font-mono" value={peak} onChange={(e) => setPeak(Math.max(1, Number(e.target.value)))} />
+      {!readOnly && (
+        <section className="grid gap-3 rounded-md border p-4">
+          <div className="grid gap-1">
+            <h3 className="text-sm font-medium">Start from a pattern (optional)</h3>
+            <p className="text-sm text-muted-foreground">Fills the stages below with a ready-made shape. You can edit every stage afterwards.</p>
           </div>
-          {presets.map((p) => (
-            <Button key={p.name} type="button" variant="outline" title={p.help} disabled={readOnly} onClick={() => onChange({ ...load, stages: p.stages(peak), maxVUs: Math.max(peak, 5) })}>
-              {p.name}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="grid gap-2">
+              <Label htmlFor="pattern">Pattern</Label>
+              <Select value={pattern} onValueChange={setPattern}>
+                <SelectTrigger id="pattern" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map((p) => (
+                    <SelectItem key={p.name} value={p.name}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {preset.name !== 'Smoke' && (
+              <div className="grid gap-2">
+                <Label htmlFor="peak">Peak users</Label>
+                <LoadNumberInput id="peak" className="w-28" min={1} value={peak} onCommit={setPeak} onBlur={() => setPeak((n) => Math.max(1, Math.round(n) || 1))} />
+              </div>
+            )}
+            <Button type="button" variant="outline" onClick={() => setStages(preset.stages(Math.max(1, Math.round(peak) || 1)))}>
+              Fill stages
             </Button>
-          ))}
-        </div>
-        <p className="text-sm text-muted-foreground">Hover a pattern to see what it does. It replaces the stages below, which you can then edit.</p>
-      </section>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{preset.name}:</span> {preset.help}. Replaces the current stages.
+          </p>
+        </section>
+      )}
 
       <section className="grid gap-3">
         <div className="flex items-baseline justify-between">
           <h3 className="text-sm font-medium">Stages</h3>
           <span className="font-mono text-sm text-muted-foreground">Total {formatElapsed(at)}</span>
         </div>
-        <TimeChart title="Planned simulated users" data={[xs, ys]} series={PREVIEW} digits={0} height={160} />
+        <TimeChart title="Planned simulated users" data={[xs, ys]} series={PREVIEW} digits={0} height={160} idle={`Peak ${top} users, total ${formatElapsed(at)}. Hover for details.`} />
         {errors.get('load.stages') && <p className="text-sm text-destructive">{errors.get('load.stages')}</p>}
+        {errors.get('load.maxVUs') && <p className="text-sm text-destructive">{errors.get('load.maxVUs')}</p>}
+        <p className="text-sm text-muted-foreground">Stages run top to bottom. During each stage the number of users changes evenly from where the last stage ended to its own target.</p>
         <div className="grid grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 text-sm">
           <span className="text-xs text-muted-foreground">#</span>
-          <span className="text-xs text-muted-foreground">Over this many seconds</span>
-          <span className="text-xs text-muted-foreground">move to this many users</span>
+          <span className="text-xs text-muted-foreground">Length (seconds)</span>
+          <span className="text-xs text-muted-foreground">Users at the end</span>
           <span aria-hidden="true" />
           {stages.map((s, i) => {
             const err = errors.get(`load.stages.${i}.durationSec`) ?? errors.get(`load.stages.${i}.target`)
             return (
               <div key={ids[i] ?? i} className="contents">
                 <span className="font-mono text-muted-foreground">{i + 1}</span>
-                <Input
-                  aria-label={`Stage ${i + 1} duration`}
-                  type="number"
+                <LoadNumberInput
+                  ariaLabel={`Stage ${i + 1} length in seconds`}
                   min={1}
-                  className="font-mono"
                   value={s.durationSec}
-                  aria-invalid={errors.get(`load.stages.${i}.durationSec`) ? true : undefined}
-                  onChange={(e) => update(i, { durationSec: Number(e.target.value) })}
+                  invalid={!!errors.get(`load.stages.${i}.durationSec`)}
+                  onCommit={(n) => update(i, { durationSec: n })}
+                  onBlur={() => update(i, { durationSec: Math.max(1, Math.round(s.durationSec) || 1) })}
                 />
-                <Input
-                  aria-label={`Stage ${i + 1} target users`}
-                  type="number"
+                <LoadNumberInput
+                  ariaLabel={`Stage ${i + 1} users at the end`}
                   min={0}
-                  className="font-mono"
                   value={s.target}
-                  aria-invalid={errors.get(`load.stages.${i}.target`) ? true : undefined}
-                  onChange={(e) => update(i, { target: Number(e.target.value) })}
+                  invalid={!!errors.get(`load.stages.${i}.target`)}
+                  onCommit={(n) => update(i, { target: n })}
+                  onBlur={() => update(i, { target: Math.max(0, Math.round(s.target) || 0) })}
                 />
                 <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove stage ${i + 1}`} disabled={stages.length === 1} onClick={() => removeStage(i)}>
                   <XIcon />
@@ -428,19 +468,19 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
         )}
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <Label htmlFor="max-vus">User limit</Label>
-          <Input id="max-vus" type="number" min={1} className="w-32 font-mono" value={load.maxVUs} aria-invalid={errors.get('load.maxVUs') ? true : undefined} onChange={(e) => onChange({ ...load, maxVUs: Number(e.target.value) })} />
-          <p className="text-sm text-destructive">{errors.get('load.maxVUs')}</p>
-          <p className="-mt-2 text-sm text-muted-foreground">No stage may go above this.</p>
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="graceful">Finishing time at the end (seconds)</Label>
-          <Input id="graceful" type="number" min={0} className="w-32 font-mono" value={load.gracefulStopSec} onChange={(e) => onChange({ ...load, gracefulStopSec: Number(e.target.value) })} />
-          <p className="text-sm text-destructive">{errors.get('load.gracefulStopSec')}</p>
-          <p className="-mt-2 text-sm text-muted-foreground">When the test ends, users get this long to finish the request they are sending.</p>
-        </div>
+      <section className="grid max-w-md gap-2">
+        <Label htmlFor="graceful">Wind-down time (seconds)</Label>
+        <LoadNumberInput
+          id="graceful"
+          className="w-32"
+          min={0}
+          value={load.gracefulStopSec}
+          invalid={!!errors.get('load.gracefulStopSec')}
+          onCommit={(n) => onChange({ ...load, gracefulStopSec: n })}
+          onBlur={() => onChange({ ...load, gracefulStopSec: Math.min(600, Math.max(0, Math.round(load.gracefulStopSec) || 0)) })}
+        />
+        {errors.get('load.gracefulStopSec') && <p className="text-sm text-destructive">{errors.get('load.gracefulStopSec')}</p>}
+        <p className="text-sm text-muted-foreground">After the last stage, requests already on their way get this long to finish before the test stops. 30 suits most tests.</p>
       </section>
     </div>
   )
