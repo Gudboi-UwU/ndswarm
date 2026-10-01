@@ -101,6 +101,23 @@ func TestProjectsEnvironmentsTests(t *testing.T) {
 		t.Errorf("generators for viewer: %d", code)
 	}
 
+	// Folders: move a test, rename a folder (and its subfolders), both edit-only.
+	viewer.expect("POST", fmt.Sprintf("/tests/%d/folder", tid), `{"folder":"Billing"}`, 403)
+	moved := admin.expect("POST", fmt.Sprintf("/tests/%d/folder", tid), `{"folder":"Billing"}`, 200)
+	if moved["folder"] != "Billing" {
+		t.Errorf("move: %v", moved)
+	}
+	deep := strings.Repeat("a / ", 8) + "a"
+	admin.expect("POST", fmt.Sprintf("/tests/%d/folder", tid), fmt.Sprintf(`{"folder":%q}`, deep), 400)
+
+	viewer.expect("POST", fmt.Sprintf("/projects/%d/folders/rename", pid), `{"from":"Billing","to":"Accounts"}`, 403)
+	admin.expect("POST", fmt.Sprintf("/projects/%d/folders/rename", pid), `{"from":"Billing","to":"Accounts"}`, 204)
+	got = admin.expect("GET", fmt.Sprintf("/tests/%d", tid), "", 200)
+	if got["folder"] != "Accounts" {
+		t.Errorf("after rename: %v", got)
+	}
+	admin.expect("POST", fmt.Sprintf("/projects/%d/folders/rename", pid), `{"from":"Nope","to":"Else"}`, 404)
+
 	admin.expect("DELETE", fmt.Sprintf("/projects/%d", pid), "", 204)
 	admin.expect("GET", fmt.Sprintf("/tests/%d", tid), "", 404)
 }
