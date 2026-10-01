@@ -76,7 +76,7 @@ export function LoadEditor({ load, onChange, memory, onMemory }: { load: Load; o
           </p>
         </div>
         <div className="grid gap-1">
-          <div className="flex rounded-md border p-0.5" role="radiogroup" aria-label="Load mode">
+          <div className="flex w-fit rounded-md border p-0.5" role="radiogroup" aria-label="Load mode">
             {([false, true] as const).map((c) => (
               <button
                 key={String(c)}
