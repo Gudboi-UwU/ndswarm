@@ -11,13 +11,15 @@ import (
 	"github.com/Gudboi-UwU/ndswarm/internal/model"
 )
 
+// fixture decodes the shop fixture in "top" mode (one test per top-level folder, subfolders
+// merged): the shape every pre-folders test in this file was written against.
 func fixture(t *testing.T) (Bundle, []string) {
 	t.Helper()
 	data, err := os.ReadFile("testdata/shop.postman_collection.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, warns, err := Decode(string(data), "")
+	b, warns, err := Decode(string(data), "", "top")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,6 +39,8 @@ func step(t *testing.T, b Bundle, test, name string) model.Step {
 	return model.Step{}
 }
 
+// TestPostmanMapping checks "top" split: today's behaviour, one test per top-level folder with
+// subfolders merged into it (request names get a "Sub / " prefix).
 func TestPostmanMapping(t *testing.T) {
 	b, warns := fixture(t)
 	if b.Format != "postman" || b.Project.Name != "Shop API" || b.Project.Description == "" {
@@ -135,6 +139,63 @@ func TestPostmanMapping(t *testing.T) {
 	}
 }
 
+// TestPostmanMappingFolderMode checks the new default "folder" split on the same fixture: Auth
+// has no subfolders, so it maps the same as "top"; Orders has both direct requests and a
+// subfolder (Admin), so it splits into two tests that share the folder "Orders", and the
+// "Admin / " name prefix is gone.
+func TestPostmanMappingFolderMode(t *testing.T) {
+	data, err := os.ReadFile("testdata/shop.postman_collection.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _, err := Decode(string(data), "", "folder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][2]any{} // name -> [folder, flow count]
+	for _, tt := range b.Tests {
+		got[tt.Name] = [2]any{tt.Folder, len(tt.Flows)}
+	}
+	want := map[string][2]any{
+		"Auth":     {"", 2},
+		"Orders":   {"Orders", 5},
+		"Admin":    {"Orders", 1},
+		"Shop API": {"", 1},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if del := step(t, b, "Admin", "Delete order"); del.Method != "DELETE" || del.URL != "/orders/:id" {
+		t.Errorf("delete: %+v (name should have no folder prefix)", del)
+	}
+}
+
+// TestPostmanFolderModeNesting covers three levels and a folder that holds only subfolders
+// (Report), which the mapping rules say contributes no test of its own.
+func TestPostmanFolderModeNesting(t *testing.T) {
+	col := `{"info":{"name":"X","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+		"item":[{"name":"Iterasi 2","item":[
+			{"name":"Login","item":[{"name":"Sign in","request":"https://api.test/login"}]},
+			{"name":"Transaksi","item":[{"name":"Pay","request":"https://api.test/pay"}]},
+			{"name":"Report","item":[
+				{"name":"Harian","item":[{"name":"Daily","request":"https://api.test/daily"}]},
+				{"name":"Bulanan","item":[{"name":"Monthly","request":"https://api.test/monthly"}]}
+			]}
+		]}]}`
+	b, _, err := Decode(col, "", "folder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{} // test name -> folder
+	for _, tt := range b.Tests {
+		got[tt.Name] = tt.Folder
+	}
+	want := map[string]string{"Login": "Iterasi 2", "Transaksi": "Iterasi 2", "Harian": "Iterasi 2 / Report", "Bulanan": "Iterasi 2 / Report"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestDetect(t *testing.T) {
 	cases := []struct{ in, env, err string }{
 		{`{"name":"dev","values":[{"key":"a","value":"1"}]}`, "", "Postman environment"},
@@ -144,11 +205,11 @@ func TestDetect(t *testing.T) {
 		{`{"format":"ndswarm","version":2}`, "", "version 2"},
 	}
 	for _, c := range cases {
-		if _, _, err := Decode(c.in, c.env); err == nil || !strings.Contains(err.Error(), c.err) {
+		if _, _, err := Decode(c.in, c.env, ""); err == nil || !strings.Contains(err.Error(), c.err) {
 			t.Errorf("%s: got %v, want %q", c.in, err, c.err)
 		}
 	}
-	if _, _, err := Decode(strings.Repeat(" ", MaxSize+1), ""); err == nil {
+	if _, _, err := Decode(strings.Repeat(" ", MaxSize+1), "", ""); err == nil {
 		t.Error("oversized file accepted")
 	}
 }
@@ -157,7 +218,7 @@ func TestPostmanEnvironmentAndSharedHost(t *testing.T) {
 	col := `{"info":{"name":"X","schema":"https://schema.getpostman.com/json/collection/v2.0.0/collection.json"},
 		"item":[{"name":"a","request":"https://api.test/a?x=1"},{"name":"b","request":{"method":"get","url":"https://api.test/b/{{id}}"}}]}`
 	env := `{"name":"staging","values":[{"key":"id","value":"7","enabled":true},{"key":"pw","value":"s3","type":"secret","enabled":true}]}`
-	b, _, err := Decode(col, env)
+	b, _, err := Decode(col, env, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +239,7 @@ func TestPostmanSplitsBigFolder(t *testing.T) {
 	}
 	col := `{"info":{"name":"X","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
 		"item":[{"name":"Big","item":[` + strings.Join(items, ",") + `]}]}`
-	b, warns, err := Decode(col, "")
+	b, warns, err := Decode(col, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +288,7 @@ func TestNativeRoundTripAndSecrets(t *testing.T) {
 				t.Errorf("%s export leaks %q", typ, secret)
 			}
 		}
-		got, warns, err := Decode(string(out), "")
+		got, warns, err := Decode(string(out), "", "")
 		if err != nil {
 			t.Fatalf("%s: %v", typ, err)
 		}
@@ -250,6 +311,24 @@ func TestNativeRoundTripAndSecrets(t *testing.T) {
 	}
 }
 
+// TestNativeRoundTripFolder checks that a test's folder survives a native export and re-import.
+func TestNativeRoundTripFolder(t *testing.T) {
+	p, envs, tests := sample()
+	tests[0].Folder = "Checkout / Fast path"
+	b := FromProject(p, envs, tests)
+	out, err := b.Marshal("json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := Decode(string(out), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Tests[0].Folder != "Checkout / Fast path" {
+		t.Errorf("folder = %q", got.Tests[0].Folder)
+	}
+}
+
 func TestPostmanRoundTrip(t *testing.T) {
 	check := func(name string, b Bundle, folders bool) {
 		out, err := b.Postman(folders)
@@ -259,7 +338,7 @@ func TestPostmanRoundTrip(t *testing.T) {
 		if strings.Contains(string(out), "tok-999") || strings.Contains(string(out), "hunter22") {
 			t.Errorf("%s: postman export leaks a secret", name)
 		}
-		got, _, err := Decode(string(out), "")
+		got, _, err := Decode(string(out), "", "")
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", name, err, out)
 		}
@@ -296,6 +375,38 @@ func TestPostmanRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPostmanFolderExportRoundTrip checks that a Postman project export rebuilds nested folders
+// from each test's folder path, and that re-importing it in "folder" split mode gets the same
+// folders back.
+func TestPostmanFolderExportRoundTrip(t *testing.T) {
+	flow := func(name string) model.Flow {
+		return model.Flow{ID: name, Name: name, Enabled: true, Weight: 1, Steps: []model.Step{
+			{ID: name, Name: name, Enabled: true, Method: "GET", URL: "/" + name, Body: model.Body{Type: "none"}},
+		}}
+	}
+	b := Bundle{Project: ProjectInfo{Name: "P"}, Tests: []Test{
+		{Name: "Orders", Settings: model.DefaultSettings, Folder: "Orders", Flows: []model.Flow{flow("list")}},
+		{Name: "Admin", Settings: model.DefaultSettings, Folder: "Orders", Flows: []model.Flow{flow("del")}},
+		{Name: "Health", Settings: model.DefaultSettings, Flows: []model.Flow{flow("health")}},
+	}}
+	out, err := b.Postman(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := Decode(string(out), "", "folder")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	folders := map[string]string{}
+	for _, tt := range got.Tests {
+		folders[tt.Name] = tt.Folder
+	}
+	want := map[string]string{"Orders": "Orders", "Admin": "Orders", "Health": ""}
+	if !reflect.DeepEqual(folders, want) {
+		t.Fatalf("got %v, want %v\n%s", folders, want, out)
+	}
+}
+
 // TestPostmanMalformed feeds odd or broken Postman collections through Decode and checks
 // only that it never panics and always returns either a bundle or a plain error, never both.
 func TestPostmanMalformed(t *testing.T) {
@@ -323,7 +434,7 @@ func TestPostmanMalformed(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			b, _, err := Decode(c.col, "")
+			b, _, err := Decode(c.col, "", "")
 			if err != nil && len(b.Tests) != 0 {
 				t.Errorf("error %v but also got %d tests", err, len(b.Tests))
 			}
@@ -332,11 +443,15 @@ func TestPostmanMalformed(t *testing.T) {
 }
 
 func TestUniqueName(t *testing.T) {
-	taken := map[string]bool{"a": true, "a (2)": true}
-	if got := uniqueName("A", taken); got != "A (3)" {
+	taken := map[string]bool{folderKey("", "a"): true, folderKey("", "a (2)"): true}
+	if got := uniqueName("A", "", taken); got != "A (3)" {
 		t.Errorf("got %q", got)
 	}
-	if !taken["a (3)"] {
+	if !taken[folderKey("", "a (3)")] {
 		t.Error("not marked taken")
+	}
+	// The same name is fine again in a different folder.
+	if got := uniqueName("A", "Orders", taken); got != "A" {
+		t.Errorf("different folder: got %q", got)
 	}
 }

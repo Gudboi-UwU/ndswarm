@@ -51,6 +51,7 @@ type Server struct {
 type Test struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
+	Folder      string            `json:"folder,omitempty"`
 	Server      string            `json:"server"`
 	Flows       []model.Flow      `json:"flows"`
 	Load        model.Load        `json:"load"`
@@ -74,7 +75,7 @@ func FromProject(p model.Project, envs []model.Environment, tests []model.Test) 
 		if t.EnvironmentID != nil {
 			server = names[*t.EnvironmentID]
 		}
-		b.Tests = append(b.Tests, Test{t.Name, t.Description, server, t.Flows, t.Load, t.Settings, t.Thresholds})
+		b.Tests = append(b.Tests, Test{Name: t.Name, Description: t.Description, Folder: t.Folder, Server: server, Flows: t.Flows, Load: t.Load, Settings: t.Settings, Thresholds: t.Thresholds})
 	}
 	return b
 }
@@ -89,8 +90,10 @@ func (b Bundle) Marshal(typ string) ([]byte, error) {
 }
 
 // Decode reads an uploaded file (JSON or YAML) and an optional Postman environment file.
+// split chooses how a Postman collection's folders map to tests: "folder" (default, one test per
+// folder) or "top" (one test per top-level folder, subfolders merged); it is ignored otherwise.
 // It returns a checked bundle and warnings about what could not be imported.
-func Decode(content, environment string) (Bundle, []string, error) {
+func Decode(content, environment, split string) (Bundle, []string, error) {
 	var b Bundle
 	if len(content)+len(environment) > MaxSize {
 		return b, nil, errors.New("the file is larger than 20 MB")
@@ -121,7 +124,7 @@ func Decode(content, environment string) (Bundle, []string, error) {
 				return b, nil, fmt.Errorf("environment file: %w", err)
 			}
 		}
-		b, warns, err = decodePostman(data, env)
+		b, warns, err = decodePostman(data, env, split)
 	case probe.Values != nil && probe.Item == nil:
 		err = errors.New("this is a Postman environment file. Choose the collection file first, then add this one as the environment")
 	default:
@@ -226,7 +229,7 @@ func (b *Bundle) check() ([]string, error) {
 		if err := mt.Validate(); err != nil {
 			problems = append(problems, fmt.Sprintf("Test %q: %s", t.Name, details(err)))
 		}
-		t.Flows, t.Load, t.Settings, t.Thresholds = mt.Flows, mt.Load, mt.Settings, mt.Thresholds
+		t.Folder, t.Flows, t.Load, t.Settings, t.Thresholds = mt.Folder, mt.Flows, mt.Load, mt.Settings, mt.Thresholds
 	}
 	if len(problems) > 0 {
 		// The API adds the final full stop, so drop the one the last validation message ends with.
@@ -236,7 +239,7 @@ func (b *Bundle) check() ([]string, error) {
 }
 
 func (t Test) model() model.Test {
-	return model.Test{Name: t.Name, Description: t.Description, Flows: t.Flows, Load: t.Load, Settings: t.Settings, Thresholds: t.Thresholds}
+	return model.Test{Name: t.Name, Description: t.Description, Folder: t.Folder, Flows: t.Flows, Load: t.Load, Settings: t.Settings, Thresholds: t.Thresholds}
 }
 
 func details(err error) string {

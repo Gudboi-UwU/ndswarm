@@ -52,7 +52,7 @@ func Save(ctx context.Context, svc projectStore, b Bundle, projectID int64, newP
 			return res, err
 		}
 		for _, t := range tests {
-			taken[strings.ToLower(t.Name)] = true
+			taken[folderKey(t.Folder, t.Name)] = true
 		}
 	} else {
 		if strings.TrimSpace(newProject) == "" {
@@ -89,7 +89,7 @@ func Save(ctx context.Context, svc projectStore, b Bundle, projectID int64, newP
 	for _, t := range b.Tests {
 		mt := t.model()
 		mt.ProjectID = projectID
-		mt.Name = uniqueName(t.Name, taken)
+		mt.Name = uniqueName(t.Name, t.Folder, taken)
 		if t.Server != "" {
 			if id, ok := envIDs[strings.ToLower(t.Server)]; ok {
 				mt.EnvironmentID = &id
@@ -106,10 +106,16 @@ func Save(ctx context.Context, svc projectStore, b Bundle, projectID int64, newP
 	return res, nil
 }
 
-// uniqueName appends " (2)", " (3)" until name is free, and marks it taken.
-func uniqueName(name string, taken map[string]bool) string {
+// folderKey makes a taken-name map key that is unique per folder, so the same name is fine in two
+// different folders.
+func folderKey(folder, name string) string {
+	return strings.ToLower(folder) + "\x00" + strings.ToLower(name)
+}
+
+// uniqueName appends " (2)", " (3)" until name is free within folder, and marks it taken.
+func uniqueName(name, folder string, taken map[string]bool) string {
 	out := name
-	for n := 2; taken[strings.ToLower(out)]; n++ {
+	for n := 2; taken[folderKey(folder, out)]; n++ {
 		suffix := fmt.Sprintf(" (%d)", n)
 		r := []rune(name)
 		if len(r)+len(suffix) > model.MaxNameLen {
@@ -117,6 +123,6 @@ func uniqueName(name string, taken map[string]bool) string {
 		}
 		out = string(r) + suffix
 	}
-	taken[strings.ToLower(out)] = true
+	taken[folderKey(folder, out)] = true
 	return out
 }

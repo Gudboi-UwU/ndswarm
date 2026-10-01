@@ -127,6 +127,7 @@ func slug(name string) string {
 type importInput struct {
 	Content     string `json:"content"`
 	Environment string `json:"environment"`
+	Split       string `json:"split"` // Postman only: "folder" (default) or "top"
 	NewProject  string `json:"newProject"`
 	ProjectID   int64  `json:"projectId"`
 }
@@ -144,7 +145,11 @@ func readImport(w http.ResponseWriter, r *http.Request, preview bool) (importer.
 		writeError(w, http.StatusBadRequest, "bad_request", "preview takes only content and environment", nil)
 		return importer.Bundle{}, nil, in, false
 	}
-	b, warns, err := importer.Decode(in.Content, in.Environment)
+	if in.Split != "" && in.Split != "folder" && in.Split != "top" {
+		writeError(w, http.StatusBadRequest, "bad_request", "split must be \"folder\" or \"top\"", nil)
+		return importer.Bundle{}, nil, in, false
+	}
+	b, warns, err := importer.Decode(in.Content, in.Environment, in.Split)
 	if err != nil {
 		fail(w, r, model.ValidationError{{Path: "content", Message: sentence(err.Error())}})
 		return b, nil, in, false
@@ -164,6 +169,7 @@ func (s *Server) importPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	type testOut struct {
 		Name       string   `json:"name"`
+		Folder     string   `json:"folder"`
 		Server     string   `json:"server"`
 		Requests   []reqOut `json:"requests"`
 		Thresholds int      `json:"thresholds"`
@@ -179,7 +185,7 @@ func (s *Server) importPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	tests := []testOut{}
 	for _, t := range b.Tests {
-		out := testOut{Name: t.Name, Server: t.Server, Requests: []reqOut{}, Thresholds: len(t.Thresholds)}
+		out := testOut{Name: t.Name, Folder: t.Folder, Server: t.Server, Requests: []reqOut{}, Thresholds: len(t.Thresholds)}
 		for _, f := range t.Flows {
 			for _, st := range f.Steps {
 				out.Requests = append(out.Requests, reqOut{st.Method, st.Name, st.URL})

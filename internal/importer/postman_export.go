@@ -137,6 +137,7 @@ func (b Bundle) Postman(folders bool) ([]byte, error) {
 		addVars(*main)
 		col.Auth = x.auth(main.Auth)
 	}
+	tree := &folderTree{}
 	for _, t := range b.Tests {
 		s, hasServer := servers[t.Server]
 		if hasServer {
@@ -173,9 +174,50 @@ func (b Bundle) Postman(folders bool) ([]byte, error) {
 		if hasServer && main != nil && s.Auth != main.Auth {
 			folder.Auth = x.auth(s.Auth)
 		}
-		col.Item = append(col.Item, folder)
+		tree.at(t.Folder).items = append(tree.at(t.Folder).items, folder)
+	}
+	if folders {
+		col.Item = tree.render()
 	}
 	return marshal(col)
+}
+
+// folderTree rebuilds the nested folder structure a test.Folder path implies: each test becomes a
+// folder (added above via at(...).items), nested inside a chain of folder items matching its path.
+type folderTree struct {
+	name     string
+	items    []pmOutItem
+	children []*folderTree
+	byName   map[string]*folderTree
+}
+
+// at returns the node for a " / "-joined folder path, creating any folder on the way that is missing.
+func (f *folderTree) at(path string) *folderTree {
+	cur := f
+	if path == "" {
+		return cur
+	}
+	for _, seg := range strings.Split(path, " / ") {
+		if cur.byName == nil {
+			cur.byName = map[string]*folderTree{}
+		}
+		next, ok := cur.byName[seg]
+		if !ok {
+			next = &folderTree{name: seg}
+			cur.byName[seg] = next
+			cur.children = append(cur.children, next)
+		}
+		cur = next
+	}
+	return cur
+}
+
+func (f *folderTree) render() []pmOutItem {
+	out := append([]pmOutItem{}, f.items...)
+	for _, c := range f.children {
+		out = append(out, pmOutItem{Name: c.name, Item: c.render()})
+	}
+	return out
 }
 
 func (x *exporter) auth(a model.Auth) *pmOutAuth {

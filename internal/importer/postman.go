@@ -209,7 +209,10 @@ func varKey(name string) string {
 	return k
 }
 
-func decodePostman(data, envData []byte) (Bundle, []string, error) {
+func decodePostman(data, envData []byte, split string) (Bundle, []string, error) {
+	if split != "top" {
+		split = "folder"
+	}
 	var col pmCollection
 	if err := json.Unmarshal(data, &col); err != nil {
 		return Bundle{}, nil, fmt.Errorf("this Postman collection is damaged: %v", err)
@@ -284,9 +287,47 @@ func decodePostman(data, envData []byte) (Bundle, []string, error) {
 			reqs = append(reqs, req{prefix + it.Name, r, a, test, it.Name})
 		}
 	}
+	// processFolder implements the "folder" split: a folder with its own direct requests becomes a
+	// test named after it (next to its subfolders' tests when it has both); a folder with only
+	// subfolders contributes no test of its own, just the folder path its children land in.
+	var processFolder func(it pmItem, ancestors []string, auth *pmAuth)
+	processFolder = func(it pmItem, ancestors []string, auth *pmAuth) {
+		a := auth
+		if it.Auth != nil && it.Auth.Type != "inherit" {
+			a = it.Auth
+		}
+		c.scripts(fmt.Sprintf("Folder %q", it.Name), it.Event)
+		var direct, sub []pmItem
+		for _, child := range it.Item {
+			if child.Request == nil {
+				sub = append(sub, child)
+			} else {
+				direct = append(direct, child)
+			}
+		}
+		if len(direct) > 0 {
+			folderPath := ancestors
+			if len(sub) > 0 {
+				folderPath = append(append([]string{}, ancestors...), it.Name)
+			}
+			b.Tests = append(b.Tests, Test{Name: it.Name, Description: text(it.Description), Folder: folderSegments(folderPath)})
+			walk(direct, "", len(b.Tests)-1, a)
+		}
+		if len(sub) > 0 {
+			nested := append(append([]string{}, ancestors...), it.Name)
+			for _, sf := range sub {
+				processFolder(sf, nested, a)
+			}
+		}
+	}
+
 	root := -1
 	for _, it := range col.Item {
 		if it.Request == nil {
+			if split == "folder" {
+				processFolder(it, nil, nil)
+				continue
+			}
 			b.Tests = append(b.Tests, Test{Name: it.Name, Description: text(it.Description)})
 			a := (*pmAuth)(nil)
 			if it.Auth != nil && it.Auth.Type != "inherit" {
@@ -354,6 +395,16 @@ func decodePostman(data, envData []byte) (Bundle, []string, error) {
 		return b, nil, errors.New("this Postman collection has no requests")
 	}
 	return b, c.warns, nil
+}
+
+// folderSegments joins folder names into one path, the way model.Test.Folder expects it. A " / "
+// already inside a name would be read back as a path separator, so it becomes " - " instead.
+func folderSegments(names []string) string {
+	segs := make([]string, len(names))
+	for i, n := range names {
+		segs[i] = strings.ReplaceAll(n, " / ", " - ")
+	}
+	return strings.Join(segs, " / ")
 }
 
 // scripts warns once per location that Postman scripts do not run here.

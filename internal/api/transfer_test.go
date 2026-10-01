@@ -26,7 +26,7 @@ func TestImportExport(t *testing.T) {
 	body := fmt.Sprintf(`{"content":%s}`, content)
 
 	prev := admin.expect("POST", "/import/preview", body, 200)
-	if prev["format"] != "postman" || len(prev["tests"].([]any)) != 3 || len(prev["warnings"].([]any)) == 0 {
+	if prev["format"] != "postman" || len(prev["tests"].([]any)) != 4 || len(prev["warnings"].([]any)) == 0 {
 		t.Errorf("preview: %v", prev)
 	}
 	if s := prev["servers"].([]any)[0].(map[string]any); s["baseUrl"] != "https://shop.example.com/api" || s["variables"].(float64) != 2 {
@@ -39,7 +39,7 @@ func TestImportExport(t *testing.T) {
 	// New project, then the same file again into it: tests get " (2)", the server is reused.
 	res := admin.expect("POST", "/import", fmt.Sprintf(`{"content":%s,"newProject":"My shop"}`, content), 201)
 	pid := int(res["projectId"].(float64))
-	if len(res["tests"].([]any)) != 3 {
+	if len(res["tests"].([]any)) != 4 {
 		t.Errorf("import: %v", res)
 	}
 	res = admin.expect("POST", "/import", fmt.Sprintf(`{"content":%s,"projectId":%d}`, content, pid), 201)
@@ -47,7 +47,7 @@ func TestImportExport(t *testing.T) {
 	for _, tt := range res["tests"].([]any) {
 		names = append(names, tt.(map[string]any)["name"].(string))
 	}
-	if strings.Join(names, ",") != "Auth (2),Orders (2),Shop API (2)" || !strings.Contains(fmt.Sprint(res["warnings"]), "already exists") {
+	if strings.Join(names, ",") != "Auth (2),Orders (2),Admin (2),Shop API (2)" || !strings.Contains(fmt.Sprint(res["warnings"]), "already exists") {
 		t.Errorf("second import: %v", res)
 	}
 	envs := getList(t, admin, fmt.Sprintf("/projects/%d/environments", pid))
@@ -55,7 +55,7 @@ func TestImportExport(t *testing.T) {
 		t.Errorf("servers: %v", envs)
 	}
 	tests := getList(t, admin, fmt.Sprintf("/projects/%d/tests", pid))
-	if len(tests) != 6 || tests[0]["environmentId"] == nil {
+	if len(tests) != 8 || tests[0]["environmentId"] == nil {
 		t.Errorf("tests: %v", tests)
 	}
 	admin.expect("POST", "/import", fmt.Sprintf(`{"content":%s,"projectId":99999}`, content), 404)
@@ -107,7 +107,7 @@ func TestImportExport(t *testing.T) {
 	res2.Body.Close()
 	nc, _ := json.Marshal(string(native))
 	back := admin.expect("POST", "/import", fmt.Sprintf(`{"content":%s}`, nc), 201)
-	if len(back["tests"].([]any)) != 6 {
+	if len(back["tests"].([]any)) != 8 {
 		t.Errorf("re-import: %v", back)
 	}
 }
