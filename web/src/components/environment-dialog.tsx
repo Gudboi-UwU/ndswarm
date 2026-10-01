@@ -31,7 +31,7 @@ export function EnvironmentDialog({
   const [draft, setDraft] = useState<Draft>(() => (env ? structuredClone(env) : structuredClone(blank)))
   const queryClient = useQueryClient()
   const save = useMutation({
-    mutationFn: () => (env ? api<Environment>('PUT', `/environments/${env.id}`, draft) : api<Environment>('POST', `/projects/${projectId}/environments`, draft)),
+    mutationFn: (d: Draft) => (env ? api<Environment>('PUT', `/environments/${env.id}`, d) : api<Environment>('POST', `/projects/${projectId}/environments`, d)),
     onSuccess: async (e) => {
       await queryClient.invalidateQueries({ queryKey: keys.environments(projectId) })
       // The project's tests show this server's address, so they need refreshing too.
@@ -46,7 +46,11 @@ export function EnvironmentDialog({
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    save.mutate()
+    // Rows left completely empty are dropped instead of blocking the save with a name error.
+    const filled = (v: EnvVar) => v.key.trim() !== '' || v.value.trim() !== ''
+    const clean = { ...draft, variables: draft.variables.filter(filled), headers: draft.headers.filter(filled) }
+    setDraft(clean)
+    save.mutate(clean)
   }
 
   return (
@@ -62,7 +66,7 @@ export function EnvironmentDialog({
             <FormField id="env-name" label="Name" placeholder="Staging API" value={draft.name} onChange={(e) => set({ name: e.target.value })} error={err?.field('name')} />
             <FormField
               id="env-base"
-              label="Base URL"
+              label="Server address"
               placeholder="https://api.example.com"
               value={draft.baseUrl}
               onChange={(e) => set({ baseUrl: e.target.value })}
@@ -75,6 +79,7 @@ export function EnvironmentDialog({
             title="Variables"
             hint={'Use in any value as {{var "name"}}.'}
             keyLabel="Name"
+            addLabel="Add variable"
             items={draft.variables}
             onChange={(variables) => set({ variables })}
             errorAt={(i, f) => err?.field(`variables.${i}.${f}`)}
@@ -83,6 +88,7 @@ export function EnvironmentDialog({
             title="Default headers"
             hint="Sent with every request. A request can override them."
             keyLabel="Header"
+            addLabel="Add header"
             items={draft.headers}
             onChange={(headers) => set({ headers })}
             errorAt={(i, f) => err?.field(`headers.${i}.${f}`)}
@@ -136,6 +142,7 @@ function PairList({
   title,
   hint,
   keyLabel,
+  addLabel,
   items,
   onChange,
   errorAt,
@@ -143,6 +150,7 @@ function PairList({
   title: string
   hint: string
   keyLabel: string
+  addLabel: string
   items: EnvVar[]
   onChange: (items: EnvVar[]) => void
   errorAt: (i: number, field: 'key' | 'value') => string | undefined
@@ -189,7 +197,7 @@ function PairList({
       <div>
         <Button type="button" variant="outline" size="sm" onClick={() => onChange([...items, { key: '', value: '', secret: false }])}>
           <PlusIcon />
-          Add {keyLabel.toLowerCase()}
+          {addLabel}
         </Button>
       </div>
     </fieldset>

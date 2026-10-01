@@ -320,11 +320,24 @@ func decodePostman(data, envData []byte) (Bundle, []string, error) {
 		f := c.flow(r.name, r.r, urls[i], r.auth, r.where)
 		b.Tests[r.test].Flows = append(b.Tests[r.test].Flows, f)
 	}
-	tests := b.Tests[:0]
+	var tests []Test
 	for _, t := range b.Tests {
-		if len(t.Flows) > 0 {
-			t.Settings = model.DefaultSettings
+		if len(t.Flows) == 0 {
+			continue
+		}
+		t.Settings = model.DefaultSettings
+		// A folder bigger than one test may hold becomes several tests, so it still imports.
+		n := (len(t.Flows) + model.MaxFlows - 1) / model.MaxFlows
+		if n == 1 {
 			tests = append(tests, t)
+			continue
+		}
+		c.warns = append(c.warns, fmt.Sprintf("%q has %d requests, more than the %d one test can hold, so it was split into %d tests.", t.Name, len(t.Flows), model.MaxFlows, n))
+		for i := range n {
+			part := t
+			part.Name = clip(fmt.Sprintf("%s (part %d of %d)", t.Name, i+1, n))
+			part.Flows = t.Flows[i*model.MaxFlows : min((i+1)*model.MaxFlows, len(t.Flows))]
+			tests = append(tests, part)
 		}
 	}
 	b.Tests = tests

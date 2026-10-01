@@ -229,7 +229,8 @@ func (b *Bundle) check() ([]string, error) {
 		t.Flows, t.Load, t.Settings, t.Thresholds = mt.Flows, mt.Load, mt.Settings, mt.Thresholds
 	}
 	if len(problems) > 0 {
-		return warns, errors.New("the file cannot be imported. " + strings.Join(problems, " "))
+		// The API adds the final full stop, so drop the one the last validation message ends with.
+		return warns, errors.New(strings.TrimSuffix("the file cannot be imported. "+strings.Join(problems, " "), "."))
 	}
 	return warns, nil
 }

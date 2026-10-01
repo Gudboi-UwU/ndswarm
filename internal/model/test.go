@@ -11,7 +11,7 @@ import (
 
 // Limits from the plan; the UI shows the same numbers.
 const (
-	MaxFlows       = 100
+	MaxFlows       = 500
 	MaxSteps       = 20
 	MaxVariants    = 20
 	MaxFields      = 500 // per variant, counting nested fields
@@ -161,7 +161,7 @@ func normalizeFields(fs []Field) []Field {
 func (t *Test) Validate() error {
 	var v ValidationError
 	checkName(&v, "name", t.Name)
-	v.Check(len(t.Flows) <= MaxFlows, "flows", fmt.Sprintf("At most %d endpoints per test.", MaxFlows))
+	v.Check(len(t.Flows) <= MaxFlows, "flows", fmt.Sprintf("At most %d requests per test.", MaxFlows))
 	t.Load.validate(&v)
 	t.Settings.validate(&v)
 	validateThresholds(&v, t.Thresholds)

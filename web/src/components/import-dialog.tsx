@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileUpIcon, TriangleAlertIcon } from 'lucide-react'
+import { FileUpIcon, TriangleAlertIcon, XIcon } from 'lucide-react'
 import { useState, type DragEvent, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -75,6 +75,17 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
       setFileName(file.name)
     }
   }
+  const clearFile = (env: boolean) => {
+    preview.reset()
+    setFileError(undefined)
+    if (env) {
+      setEnvironment('')
+      setEnvName('')
+    } else {
+      setContent('')
+      setFileName('')
+    }
+  }
   const drop = (e: DragEvent) => {
     e.preventDefault()
     setDragging(false)
@@ -105,25 +116,41 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
 
           {!p ? (
             <>
-              <label
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  setDragging(true)
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={drop}
-                className={cn(
-                  'grid cursor-pointer justify-items-center gap-2 rounded-lg border border-dashed p-6 text-center transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50',
-                  dragging && 'border-primary bg-primary/5',
+              <div className="relative">
+                <label
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    setDragging(true)
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={drop}
+                  className={cn(
+                    'grid cursor-pointer justify-items-center gap-2 rounded-lg border border-dashed p-6 text-center transition-colors hover:bg-muted/40 has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50',
+                    dragging && 'border-primary bg-primary/5',
+                  )}
+                >
+                  <FileUpIcon className="size-5 text-primary" />
+                  <span className="font-medium">{fileName ? fileName : 'Drop a file here or choose a file'}</span>
+                  <span className="text-sm text-muted-foreground">
+                    {fileName ? 'Choose another file to replace it.' : 'An ndswarm export (.json or .yaml) or a Postman collection (.json, version 2.0 or 2.1).'}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".json,.yaml,.yml"
+                    className="sr-only"
+                    onChange={(e) => {
+                      void readFile(e.target.files?.[0], false)
+                      // Lets the same file be chosen again after removing it.
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+                {fileName && (
+                  <Button type="button" variant="ghost" size="icon-sm" className="absolute top-2 right-2" aria-label={`Remove ${fileName}`} title="Remove file" onClick={() => clearFile(false)}>
+                    <XIcon />
+                  </Button>
                 )}
-              >
-                <FileUpIcon className="size-5 text-primary" />
-                <span className="font-medium">{fileName ? fileName : 'Drop a file here or choose a file'}</span>
-                <span className="text-sm text-muted-foreground">
-                  {fileName ? 'Choose another file to replace it.' : 'An ndswarm export (.json or .yaml) or a Postman collection (.json, version 2.0 or 2.1).'}
-                </span>
-                <input type="file" accept=".json,.yaml,.yml" className="sr-only" onChange={(e) => void readFile(e.target.files?.[0], false)} />
-              </label>
+              </div>
 
               <Disclosure title="Paste instead" summary={!fileName && content ? `${content.length.toLocaleString()} characters` : undefined}>
                 <Label htmlFor="import-paste" className="sr-only">
@@ -147,7 +174,16 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
                   <p className="text-sm text-muted-foreground">
                     A Postman environment holds the values of {'{{variables}}'}, such as the base URL. They become variables of the imported server.
                   </p>
-                  <Input type="file" accept=".json" aria-label="Postman environment file" onChange={(e) => void readFile(e.target.files?.[0], true)} />
+                  {envName ? (
+                    <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-sm">
+                      <span className="truncate font-medium">{envName}</span>
+                      <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove ${envName}`} title="Remove file" onClick={() => clearFile(true)}>
+                        <XIcon />
+                      </Button>
+                    </div>
+                  ) : (
+                    <Input type="file" accept=".json" aria-label="Postman environment file" onChange={(e) => void readFile(e.target.files?.[0], true)} />
+                  )}
                 </div>
               </Disclosure>
 

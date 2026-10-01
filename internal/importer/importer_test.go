@@ -171,6 +171,25 @@ func TestPostmanEnvironmentAndSharedHost(t *testing.T) {
 	}
 }
 
+func TestPostmanSplitsBigFolder(t *testing.T) {
+	items := make([]string, model.MaxFlows+1)
+	for i := range items {
+		items[i] = fmt.Sprintf(`{"name":"r%d","request":"https://api.test/r%d"}`, i, i)
+	}
+	col := `{"info":{"name":"X","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+		"item":[{"name":"Big","item":[` + strings.Join(items, ",") + `]}]}`
+	b, warns, err := Decode(col, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Tests) != 2 || b.Tests[0].Name != "Big (part 1 of 2)" || len(b.Tests[0].Flows) != model.MaxFlows || len(b.Tests[1].Flows) != 1 {
+		t.Fatalf("tests %d %q", len(b.Tests), b.Tests[0].Name)
+	}
+	if len(warns) == 0 || !strings.Contains(warns[len(warns)-1], "split into 2 tests") {
+		t.Errorf("warnings %v", warns)
+	}
+}
+
 func sample() (model.Project, []model.Environment, []model.Test) {
 	id := int64(3)
 	yes := true
