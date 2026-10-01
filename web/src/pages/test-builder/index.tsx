@@ -153,12 +153,6 @@ function Builder({ saved }: { saved: Test }) {
               className="peer h-10 max-w-md border-transparent bg-transparent px-2 text-xl font-semibold shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent"
             />
             {!readOnly && <PencilIcon className="-ml-1 size-4 text-muted-foreground peer-focus-visible:hidden" aria-hidden="true" />}
-            {dirty && (
-              <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
-                Unsaved changes
-              </span>
-            )}
             </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               Server
@@ -186,6 +180,12 @@ function Builder({ saved }: { saved: Test }) {
                 <Link to={`/runs?testId=${saved.id}`}>Past runs</Link>
               </Button>
               <ExportMenu size="sm" path={`/tests/${saved.id}`} note={dirty ? 'Unsaved changes are not included.' : undefined} />
+              {dirty && !readOnly && (
+                <span className="flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground" role="status">
+                  <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
+                  Unsaved changes
+                </span>
+              )}
               {readOnly ? (
                 !me?.can.run && <span className="text-sm text-muted-foreground">Read only</span>
               ) : (
