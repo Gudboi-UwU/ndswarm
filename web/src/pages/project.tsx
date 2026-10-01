@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
-import { ChevronRightIcon, CopyIcon, DownloadIcon, EllipsisIcon, FileUpIcon, FlaskConicalIcon, FolderIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
+import { ChevronRightIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, CopyIcon, DownloadIcon, EllipsisIcon, FileUpIcon, FlaskConicalIcon, FolderIcon, PencilIcon, PlusIcon, ServerIcon, Trash2Icon } from 'lucide-react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
 import { useMe } from '@/api/auth'
 import { api, ApiError, errorMessage } from '@/api/client'
@@ -25,6 +25,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -76,11 +78,50 @@ function countTests(node: FolderNode): number {
   return node.tests.length + node.children.reduce((n, c) => n + countTests(c), 0)
 }
 
+function allFolderPaths(nodes: FolderNode[]): string[] {
+  return nodes.flatMap((n) => [n.path, ...allFolderPaths(n.children)])
+}
+
+// Every folder, depth-first, with its nesting depth - what the move picker's tree is built from.
+function flattenFolders(nodes: FolderNode[], depth = 0): { path: string; name: string; depth: number }[] {
+  return nodes.flatMap((n) => [{ path: n.path, name: n.name, depth }, ...flattenFolders(n.children, depth + 1)])
+}
+
+// Every path, "a", "a / b", up to the folder holding testId. Empty when it is at the top level.
+function ancestorPaths(nodes: FolderNode[], testId: number): string[] {
+  for (const n of nodes) {
+    if (n.tests.some((t) => t.id === testId)) return [n.path]
+    const under = ancestorPaths(n.children, testId)
+    if (under.length > 0) return [n.path, ...under]
+  }
+  return []
+}
+
+const sessionSet = {
+  get(key: string): Set<string> {
+    try {
+      const raw = sessionStorage.getItem(key)
+      return raw ? new Set(JSON.parse(raw)) : new Set()
+    } catch {
+      return new Set()
+    }
+  },
+  set(key: string, value: Set<string>) {
+    try {
+      sessionStorage.setItem(key, JSON.stringify([...value]))
+    } catch {
+      // storage unavailable (private mode, quota) - open state just won't survive a refresh
+    }
+  },
+}
+
 export function ProjectPage() {
   const id = Number(useParams().id)
   const { data: me } = useMe()
   const canEdit = !!me?.can.edit
   const [params, setParams] = useSearchParams()
+  // Set by the test builder's breadcrumb link, so the folder you came back from opens.
+  const autoOpenTestId = (useLocation().state as { openTestId?: number } | null)?.openTestId
   const tab = ['runs', 'servers'].includes(params.get('tab') ?? '') ? params.get('tab')! : 'tests'
   const project = useQuery({ queryKey: keys.project(id), queryFn: () => api<Project>('GET', `/projects/${id}`) })
   const envs = useQuery({ queryKey: keys.environments(id), queryFn: () => api<Environment[]>('GET', `/projects/${id}/environments`) })
@@ -181,7 +222,7 @@ export function ProjectPage() {
           <TabsTrigger value="servers">Servers ({envs.data?.length ?? p.targetCount})</TabsTrigger>
         </TabsList>
         <TabsContent value="tests" className="mt-6">
-          <TestsTab projectId={id} canEdit={canEdit} onNew={(folder) => setCreating(folder ?? '')} />
+          <TestsTab projectId={id} canEdit={canEdit} onNew={(folder) => setCreating(folder ?? '')} autoOpenTestId={autoOpenTestId} />
         </TabsContent>
         <TabsContent value="runs" className="mt-6">
           <RunsView projectId={id} />
@@ -211,8 +252,33 @@ export function ProjectPage() {
   )
 }
 
-function TestsTab({ projectId, canEdit, onNew }: { projectId: number; canEdit: boolean; onNew: (folder?: string) => void }) {
+function TestsTab({ projectId, canEdit, onNew, autoOpenTestId }: { projectId: number; canEdit: boolean; onNew: (folder?: string) => void; autoOpenTestId?: number }) {
   const tests = useQuery({ queryKey: keys.tests(projectId), queryFn: () => api<TestSummary[]>('GET', `/projects/${projectId}/tests`) })
+  const openKey = `ndswarm.project.${projectId}.openFolders`
+  const [open, setOpen] = useState<Set<string>>(() => sessionSet.get(openKey))
+  const setFolderOpen = (path: string, isOpen: boolean) => {
+    setOpen((prev) => {
+      const next = new Set(prev)
+      if (isOpen) next.add(path)
+      else next.delete(path)
+      sessionSet.set(openKey, next)
+      return next
+    })
+  }
+  // Auto-open the folder holding the test we came back from, once (does not fight a later collapse).
+  useEffect(() => {
+    if (!autoOpenTestId || !tests.data) return
+    const { tops } = buildFolderTree(tests.data)
+    const chain = ancestorPaths(tops, autoOpenTestId)
+    if (chain.length === 0) return
+    // eslint-disable-next-line react/set-state-in-effect -- syncs from a one-time route transition, not a loop
+    setOpen((prev) => {
+      const next = new Set(prev)
+      for (const p of chain) next.add(p)
+      sessionSet.set(openKey, next)
+      return next
+    })
+  }, [autoOpenTestId, tests.data]) // eslint-disable-line react-hooks/exhaustive-deps
   const [deleting, setDeleting] = useState<TestSummary | null>(null)
   const [renaming, setRenaming] = useState<string | null>(null) // folder path being renamed, or null
   const [moving, setMoving] = useState<TestSummary | null>(null)
@@ -278,7 +344,6 @@ function TestsTab({ projectId, canEdit, onNew }: { projectId: number; canEdit: b
   }
 
   const { rootTests, tops } = buildFolderTree(tests.data)
-  const folderOptions = [...new Set(tests.data.map((t) => t.folder).filter(Boolean))].sort()
 
   const renderRow = (t: TestSummary): ReactNode => (
     <li key={t.id} className="relative grid gap-1 px-4 py-3 hover:bg-muted/40 sm:grid-cols-[minmax(0,1fr)_14rem_13rem_2.5rem] sm:items-center sm:gap-4">
@@ -320,12 +385,28 @@ function TestsTab({ projectId, canEdit, onNew }: { projectId: number; canEdit: b
     </li>
   )
 
+  const paths = allFolderPaths(tops)
+  const allOpen = paths.length > 0 && paths.every((p) => open.has(p))
+  const toggleAll = () => {
+    const next = allOpen ? new Set<string>() : new Set(paths)
+    setOpen(next)
+    sessionSet.set(openKey, next)
+  }
+
   return (
     <>
       <div className="grid gap-3">
+        {paths.length > 0 && (
+          <div className="flex justify-end">
+            <Button type="button" variant="ghost" size="sm" onClick={toggleAll}>
+              {allOpen ? <ChevronsDownUpIcon /> : <ChevronsUpDownIcon />}
+              {allOpen ? 'Collapse all' : 'Expand all'}
+            </Button>
+          </div>
+        )}
         {rootTests.length > 0 && <ul className="divide-y rounded-lg border">{rootTests.map(renderRow)}</ul>}
         {tops.map((node) => (
-          <FolderSection key={node.path} node={node} depth={0} canEdit={canEdit} renderRow={renderRow} onRename={setRenaming} onNewTest={onNew} />
+          <FolderSection key={node.path} node={node} depth={0} canEdit={canEdit} renderRow={renderRow} onRename={setRenaming} onNewTest={onNew} open={open} onToggle={setFolderOpen} />
         ))}
       </div>
       <ConfirmDelete
@@ -350,7 +431,7 @@ function TestsTab({ projectId, canEdit, onNew }: { projectId: number; canEdit: b
       <MoveTestDialog
         key={moving?.id ?? 'closed'}
         test={moving}
-        options={folderOptions}
+        folders={tops}
         onOpenChange={(o) => !o && setMoving(null)}
         onConfirm={(folder) => moving && move.mutate({ test: moving, folder })}
         pending={move.isPending}
@@ -360,8 +441,8 @@ function TestsTab({ projectId, canEdit, onNew }: { projectId: number; canEdit: b
   )
 }
 
-// A folder section is a collapsible, open-by-default group: a test tree is meant to be browsed,
-// not hidden behind a click the way optional extra content is.
+// A folder section is a collapsible group, collapsed by default: with many folders, opening
+// every one just to see names would defeat the point of grouping them.
 function FolderSection({
   node,
   depth,
@@ -369,6 +450,8 @@ function FolderSection({
   renderRow,
   onRename,
   onNewTest,
+  open,
+  onToggle,
 }: {
   node: FolderNode
   depth: number
@@ -376,10 +459,13 @@ function FolderSection({
   renderRow: (t: TestSummary) => ReactNode
   onRename: (path: string) => void
   onNewTest: (folder: string) => void
+  open: Set<string>
+  onToggle: (path: string, open: boolean) => void
 }) {
   const count = countTests(node)
+  const isOpen = open.has(node.path)
   return (
-    <details open className="group rounded-lg border" style={depth > 0 ? { marginLeft: `${depth * 1.25}rem` } : undefined}>
+    <details open={isOpen} onToggle={(e) => onToggle(node.path, e.currentTarget.open)} className="group rounded-lg border" style={depth > 0 ? { marginLeft: `${depth * 1.25}rem` } : undefined}>
       <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 px-4 py-2.5 select-none hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
         <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -417,7 +503,7 @@ function FolderSection({
       <div className="grid gap-3 border-t p-3">
         {node.tests.length > 0 && <ul className="divide-y rounded-md border">{node.tests.map(renderRow)}</ul>}
         {node.children.map((c) => (
-          <FolderSection key={c.path} node={c} depth={depth + 1} canEdit={canEdit} renderRow={renderRow} onRename={onRename} onNewTest={onNewTest} />
+          <FolderSection key={c.path} node={c} depth={depth + 1} canEdit={canEdit} renderRow={renderRow} onRename={onRename} onNewTest={onNewTest} open={open} onToggle={onToggle} />
         ))}
       </div>
     </details>
@@ -472,58 +558,127 @@ function RenameFolderDialog({
   )
 }
 
+const ROOT = '' // radio value for "No folder (top level)"
+const NEW = '\u0000new' // radio value for "New folder..." (never a real folder path)
+
 function MoveTestDialog({
   test,
-  options,
+  folders,
   onOpenChange,
   onConfirm,
   pending,
   error,
 }: {
   test: TestSummary | null
-  options: string[]
+  folders: FolderNode[]
   onOpenChange: (o: boolean) => void
   onConfirm: (folder: string) => void
   pending: boolean
   error: unknown
 }) {
-  const [folder, setFolder] = useState(test?.folder ?? '')
+  const flat = flattenFolders(folders)
+  const [dest, setDest] = useState<string>(test?.folder ?? ROOT) // selected radio value
+  const [newName, setNewName] = useState('')
+  const [newParent, setNewParent] = useState(ROOT)
+
+  const resolved = dest === NEW ? (newParent ? `${newParent} / ${newName.trim()}` : newName.trim()) : dest
+  const changed = dest === NEW ? newName.trim() !== '' && resolved !== test?.folder : dest !== (test?.folder ?? ROOT)
+
   return (
     <Dialog open={test !== null} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            onConfirm(folder.trim())
+            if (changed) onConfirm(resolved)
           }}
-          className="grid gap-5"
+          className="grid gap-4"
           noValidate
         >
           <DialogHeader>
             <DialogTitle>Move {test?.name}</DialogTitle>
-            <DialogDescription>Leave this empty to take it out of its folder.</DialogDescription>
+            <DialogDescription>Choose where this test lives.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2">
-            <Label htmlFor="mv-folder">Folder</Label>
-            <Input id="mv-folder" list="mv-folders" placeholder="e.g. Orders" value={folder} onChange={(e) => setFolder(e.target.value)} autoFocus />
-            <datalist id="mv-folders">
-              {options.map((f) => (
-                <option key={f} value={f} />
-              ))}
-            </datalist>
-          </div>
+
+          <RadioGroup value={dest} onValueChange={setDest} className="max-h-64 overflow-y-auto rounded-md border p-1">
+            <FolderOption value={ROOT}>
+              <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+              No folder (top level)
+              {!test?.folder && <span className="text-xs text-muted-foreground">(current)</span>}
+            </FolderOption>
+            {flat.map((f) => {
+              const isCurrent = test?.folder === f.path
+              return (
+                <FolderOption key={f.path} value={f.path} disabled={isCurrent} style={{ paddingLeft: `${8 + f.depth * 20}px` }}>
+                  <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{f.name}</span>
+                  {isCurrent && <span className="text-xs text-muted-foreground">(current)</span>}
+                </FolderOption>
+              )
+            })}
+            <FolderOption value={NEW}>
+              <PlusIcon className="size-4 shrink-0 text-muted-foreground" />
+              New folder...
+            </FolderOption>
+          </RadioGroup>
+
+          {dest === NEW && (
+            <div className="grid gap-3 rounded-md bg-muted/40 p-3">
+              <div className="grid gap-2">
+                <Label htmlFor="mv-new-name">Folder name</Label>
+                <Input id="mv-new-name" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. Orders" autoFocus />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="mv-new-parent">Inside</Label>
+                <Select value={newParent} onValueChange={setNewParent}>
+                  <SelectTrigger id="mv-new-parent" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ROOT}>Top level</SelectItem>
+                    {flat.map((f) => (
+                      <SelectItem key={f.path} value={f.path}>
+                        {'  '.repeat(f.depth)}
+                        {f.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {newName.trim() && (
+                <p className="truncate text-sm text-muted-foreground">
+                  Path: <span className="font-mono text-foreground">{resolved}</span>
+                </p>
+              )}
+            </div>
+          )}
+
           {error != null && <p className="text-sm text-destructive">{errorMessage(error)}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={pending}>
+            <Button type="submit" disabled={pending || !changed}>
               {pending ? 'Moving' : 'Move'}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// One row in the destination picker: the whole row is the radio's label, so it is a big click target.
+function FolderOption({ value, disabled, style, children }: { value: string; disabled?: boolean; style?: CSSProperties; children: ReactNode }) {
+  return (
+    <Label
+      htmlFor={`mv-dest-${value}`}
+      style={style}
+      className="flex min-w-0 cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm font-normal hover:bg-muted/60 has-disabled:cursor-not-allowed has-disabled:opacity-50 has-disabled:hover:bg-transparent"
+    >
+      <RadioGroupItem id={`mv-dest-${value}`} value={value} disabled={disabled} />
+      {children}
+    </Label>
   )
 }
 
