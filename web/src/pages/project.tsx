@@ -383,7 +383,7 @@ function FolderSection({
       <summary className="flex min-w-0 cursor-pointer list-none items-center gap-2 px-4 py-2.5 select-none hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
         <FolderIcon className="size-4 shrink-0 text-muted-foreground" />
-        <span className="truncate text-sm font-medium">{node.name}</span>
+        <h3 className="truncate text-sm font-medium">{node.name}</h3>
         <span className="text-xs text-muted-foreground">
           {count} test{count === 1 ? '' : 's'}
         </span>

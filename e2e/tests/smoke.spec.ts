@@ -205,8 +205,8 @@ test('import a nested Postman collection with one test per folder', async ({ pag
   await expect(page).toHaveURL(/\/projects\/\d+$/)
 
   // The project page's Tests tab groups them under the same two folder headings, open by default.
-  await expect(page.getByText('Catalog', { exact: true })).toBeVisible()
-  await expect(page.getByText('Orders', { exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Catalog', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Search', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Filters', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Orders', exact: true })).toBeVisible()
