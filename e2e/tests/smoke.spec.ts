@@ -145,9 +145,11 @@ test('import a Postman collection and export it back out', async ({ page }) => {
   const projectUrl = page.url()
 
   await expect(page.getByRole('link', { name: 'Auth', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Shop API', exact: true })).toBeVisible()
+  // "Orders" and "Admin" are inside the collapsed "Orders" folder.
+  await page.getByRole('button', { name: 'Expand all' }).click()
   await expect(page.getByRole('link', { name: 'Orders', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Admin', exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Shop API', exact: true })).toBeVisible()
 
   await page.getByRole('link', { name: 'Orders', exact: true }).click()
   await expect(page.getByRole('list', { name: 'Requests' }).getByRole('listitem')).toHaveCount(5)
