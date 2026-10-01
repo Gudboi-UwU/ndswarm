@@ -58,7 +58,9 @@ export function TimeChart({ title, data, series, unit = '', height = 200, digits
     const opts: uPlot.Options = {
       width: el.clientWidth,
       height,
-      padding: [8, 8, 0, 0],
+      // Right padding is wider than the rest: the last x-axis label (e.g. "0:15") is anchored
+      // at its tick, so without room past it the label gets clipped by the canvas edge.
+      padding: [8, 28, 0, 0],
       cursor: { points: { size: 8 }, drag: { x: false, y: false } },
       scales: { x: { time: false, ...(xMax ? { range: (): uPlot.Range.MinMax => [0, xMax] } : {}) }, y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } },
       axes: [
