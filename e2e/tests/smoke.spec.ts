@@ -204,11 +204,41 @@ test('import a nested Postman collection with one test per folder', async ({ pag
   await dialog.getByRole('button', { name: 'Import 4 tests' }).click()
   await expect(page).toHaveURL(/\/projects\/\d+$/)
 
-  // The project page's Tests tab groups them under the same two folder headings, open by default.
+  // The project page's Tests tab groups them under the same two folder headings, collapsed by
+  // default; "Expand all" opens every folder at once.
   await expect(page.getByRole('heading', { name: 'Catalog', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Orders', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Search', exact: true })).not.toBeVisible()
+  await page.getByRole('button', { name: 'Expand all' }).click()
   await expect(page.getByRole('link', { name: 'Search', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Filters', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Orders', exact: true })).toBeVisible()
   await expect(page.getByRole('link', { name: 'Admin', exact: true })).toBeVisible()
+})
+
+// A request using a variable the server does not have cannot be sent or run; fixing it clears
+// the block. Covers the builder's background check (POST /tests/check).
+test('an unset variable blocks sending and running until fixed', async ({ page }) => {
+  await page.goto('/login')
+  await page.getByLabel('Username').fill('admin')
+  await page.getByLabel('Password').fill('e2e-password')
+  await page.getByRole('button', { name: 'Log in' }).click()
+  await expect(page).not.toHaveURL(/\/login$/)
+
+  await page.goto('/projects')
+  await page.getByRole('link', { name: 'Demo shop' }).click()
+  await page.getByRole('link', { name: 'Browse and checkout' }).click()
+
+  const url = page.getByLabel('URL', { exact: true })
+  await url.fill('/fast?x={{var "missing"}}')
+
+  await expect(page.getByText('1 problem: fix it before sending.')).toBeVisible()
+  await expect(page.getByText(/"missing" is not set on the server/)).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send test request' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Run test' })).toBeDisabled()
+
+  await url.fill('/fast')
+  await expect(page.getByText(/problem.*fix/)).not.toBeVisible()
+  await expect(page.getByRole('button', { name: 'Send test request' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Run test' })).toBeEnabled()
 })
