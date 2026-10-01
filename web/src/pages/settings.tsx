@@ -6,16 +6,6 @@ import { meKey, useMe } from '@/api/auth'
 import { api, ApiError, errorMessage } from '@/api/client'
 import type { GuestMode, Role, Settings, SystemInfo, User } from '@/api/types'
 import { FormField } from '@/components/form-field'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { ConfirmDelete, useTitle } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import {
@@ -211,20 +201,17 @@ function UsersSection({ currentUserId }: { currentUserId?: number }) {
         onConfirm={() => ownRoleChange && changeRole.mutate(ownRoleChange)}
         onCancel={() => setOwnRoleChange(null)}
       />
-      <AlertDialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete {deleting?.username}?</AlertDialogTitle>
-            <AlertDialogDescription>They are logged out immediately. Runs they started stay in history.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" disabled={remove.isPending} onClick={() => deleting && remove.mutate(deleting)}>
-              Delete user
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDelete
+        target={deleting}
+        title={`Delete ${deleting?.username}?`}
+        description="They are logged out immediately. Runs they started stay in history."
+        confirm="Delete user"
+        pendingLabel="Deleting"
+        pending={remove.isPending}
+        error={remove.error}
+        onConfirm={() => deleting && remove.mutate(deleting)}
+        onCancel={() => setDeleting(null)}
+      />
     </Section>
   )
 }
