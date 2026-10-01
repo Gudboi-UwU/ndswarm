@@ -77,15 +77,15 @@ export function RunTable({ runs, showTest = true, sort, onSort }: { runs: Run[];
         <TableHeader className="bg-muted/40">
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-20">{head('Run', 'id', undefined, false)}</TableHead>
-            {showTest && <TableHead>{head('Test', 'test', undefined, false)}</TableHead>}
+            {showTest && <TableHead className="hidden sm:table-cell">{head('Test', 'test', undefined, false)}</TableHead>}
             <TableHead className="w-28">
               <Help help={glossary.result}>Result</Help>
             </TableHead>
             <TableHead className="hidden w-44 md:table-cell">{head('Started', 'started', undefined, false)}</TableHead>
             <TableHead className="w-28 text-right">{head('Duration', 'duration', glossary.duration)}</TableHead>
-            <TableHead className="w-28 text-right">{head('Requests', 'requests', glossary.requests)}</TableHead>
-            <TableHead className="w-28 text-right">{head('Average, ms', 'avg', glossary.avg)}</TableHead>
-            <TableHead className="w-36 text-right">{head('95% within, ms', 'p95', glossary.p95)}</TableHead>
+            <TableHead className="hidden w-28 text-right sm:table-cell">{head('Requests', 'requests', glossary.requests)}</TableHead>
+            <TableHead className="hidden w-28 text-right sm:table-cell">{head('Average, ms', 'avg', glossary.avg)}</TableHead>
+            <TableHead className="hidden w-36 text-right sm:table-cell">{head('95% within, ms', 'p95', glossary.p95)}</TableHead>
             <TableHead className="w-24 text-right">{head('Failed', 'failed', glossary.failedPct)}</TableHead>
           </TableRow>
         </TableHeader>
@@ -100,15 +100,15 @@ export function RunTable({ runs, showTest = true, sort, onSort }: { runs: Run[];
                     #{r.id}
                   </Link>
                 </TableCell>
-                {showTest && <TableCell className="font-medium">{r.testName}</TableCell>}
+                {showTest && <TableCell className="hidden font-medium sm:table-cell">{r.testName}</TableCell>}
                 <TableCell>
                   <RunStatus run={r} rulesCount={r.summary?.thresholds?.length ?? 0} />
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">{formatDate(r.startedAt)}</TableCell>
                 <TableCell className="text-right font-mono tabular-nums">{formatElapsed(r.summary?.elapsedSec ?? 0)}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{t ? formatNumber(t.count) : '-'}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{t ? formatNumber(t.avg, 1) : '-'}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{t ? formatNumber(t.p95, 1) : '-'}</TableCell>
+                <TableCell className="hidden text-right font-mono tabular-nums sm:table-cell">{t ? formatNumber(t.count) : '-'}</TableCell>
+                <TableCell className="hidden text-right font-mono tabular-nums sm:table-cell">{t ? formatNumber(t.avg, 1) : '-'}</TableCell>
+                <TableCell className="hidden text-right font-mono tabular-nums sm:table-cell">{t ? formatNumber(t.p95, 1) : '-'}</TableCell>
                 <TableCell className={cn('text-right font-mono tabular-nums', errPct > 0 && 'text-destructive')}>{t ? `${formatNumber(errPct, 1)}%` : '-'}</TableCell>
               </TableRow>
             )
