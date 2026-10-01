@@ -21,4 +21,5 @@ export const glossary = {
     'Passed: the run finished and every pass/fail rule held. Failed: the run finished but broke a pass/fail rule. Finished: the run finished but the test has no pass/fail rules, so check the failed requests too. Stopped: someone or something ended it early.',
   interval: 'Each row sums up this many seconds of the run.',
   total: 'All requests together. Response times here are computed over every request, not averaged per row.',
+  folder: 'An optional group for tests in a project, such as "Orders" or "Orders / Admin". Tests without a folder are listed on their own.',
 } as const

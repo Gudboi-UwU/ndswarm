@@ -140,6 +140,13 @@ function Builder({ saved }: { saved: Test }) {
             <Link to={`/projects/${saved.projectId}`} className="hover:text-foreground">
               {project.data?.name ?? '...'}
             </Link>
+            {draft.folder &&
+              draft.folder.split(' / ').map((seg, i) => (
+                <span key={i}>
+                  {' / '}
+                  {seg}
+                </span>
+              ))}
           </nav>
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center">

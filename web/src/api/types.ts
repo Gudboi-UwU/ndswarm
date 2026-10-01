@@ -75,6 +75,7 @@ export interface TestSummary {
   id: number
   name: string
   description: string
+  folder: string
   environmentId: number | null
   endpoints: number
   updatedAt: number
@@ -150,6 +151,7 @@ export interface Test {
   projectId: number
   name: string
   description: string
+  folder: string
   environmentId: number | null
   flows: Flow[]
   load: Load
@@ -396,9 +398,12 @@ export interface ImportPreview {
   format: 'ndswarm' | 'postman'
   project: { name: string; description: string }
   servers: { name: string; baseUrl: string; variables: number }[]
-  tests: { name: string; server: string; requests: { method: string; name: string; url: string }[]; thresholds: number }[]
+  tests: { name: string; folder: string; server: string; requests: { method: string; name: string; url: string }[]; thresholds: number }[]
   warnings: string[]
 }
+
+/** Postman import only: how collection folders map to tests. */
+export type ImportSplit = 'folder' | 'top'
 
 export interface ImportResult {
   projectId: number

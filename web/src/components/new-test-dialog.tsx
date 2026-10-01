@@ -3,13 +3,15 @@ import { useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
-import type { Environment, Method, Project, Test } from '@/api/types'
+import type { Environment, Method, Project, Test, TestSummary } from '@/api/types'
 import { FormField } from '@/components/form-field'
+import { Help } from '@/components/table-help'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { glossary } from '@/lib/glossary'
 import { newStep, uid } from '@/pages/test-builder/draft'
 
 const NEW_URL = 'new'
@@ -19,7 +21,18 @@ const DEFAULT_PROJECT = 'My tests'
  * The shortest way to a runnable test: a name, the server's address and one request.
  * Projects and targets are created behind the scenes when they do not exist yet.
  */
-export function NewTestDialog({ open, onOpenChange, projectId }: { open: boolean; onOpenChange: (o: boolean) => void; projectId?: number }) {
+export function NewTestDialog({
+  open,
+  onOpenChange,
+  projectId,
+  folder: initialFolder,
+}: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  projectId?: number
+  /** Prefills the Folder field, e.g. from a folder's "New test in this folder" menu item. */
+  folder?: string
+}) {
   const projects = useQuery({ queryKey: keys.projects, queryFn: () => api<Project[]>('GET', '/projects'), enabled: open })
   const [project, setProject] = useState<string>(projectId ? String(projectId) : '')
   const chosenProject = project || (projects.data?.[0] ? String(projects.data[0].id) : '')
@@ -28,7 +41,14 @@ export function NewTestDialog({ open, onOpenChange, projectId }: { open: boolean
     queryFn: () => api<Environment[]>('GET', `/projects/${chosenProject}/environments`),
     enabled: open && !!chosenProject,
   })
+  const existingTests = useQuery({
+    queryKey: keys.tests(Number(chosenProject)),
+    queryFn: () => api<TestSummary[]>('GET', `/projects/${chosenProject}/tests`),
+    enabled: open && !!chosenProject,
+  })
+  const folders = [...new Set((existingTests.data ?? []).map((t) => t.folder).filter(Boolean))].sort()
   const [name, setName] = useState('')
+  const [folder, setFolder] = useState(initialFolder ?? '')
   const [target, setTarget] = useState('')
   const [url, setUrl] = useState('')
   const [method, setMethod] = useState<Method>('GET')
@@ -74,6 +94,7 @@ export function NewTestDialog({ open, onOpenChange, projectId }: { open: boolean
       if (method !== 'GET' && method !== 'HEAD' && method !== 'DELETE') step.body = { type: 'json', variantPick: 'roundRobin', contentType: '', variants: [{ id: uid(), name: 'default', weight: 1, enabled: true, mode: 'fields', fields: [], raw: '' }] }
       const test = await api<Test>('POST', `/projects/${pid}/tests`, {
         name,
+        folder: folder.trim(),
         environmentId: envId,
         flows: [{ id: uid(), name: step.name, enabled: true, weight: 1, steps: [step] }],
       })
@@ -124,6 +145,18 @@ export function NewTestDialog({ open, onOpenChange, projectId }: { open: boolean
               </Select>
             </div>
           )}
+
+          <div className="grid gap-2">
+            <Label htmlFor="nt-folder">
+              Folder <Help help={glossary.folder}>(optional)</Help>
+            </Label>
+            <Input id="nt-folder" list="nt-folders" placeholder="e.g. Orders" value={folder} onChange={(e) => setFolder(e.target.value)} />
+            <datalist id="nt-folders">
+              {folders.map((f) => (
+                <option key={f} value={f} />
+              ))}
+            </datalist>
+          </div>
 
           <div className="grid gap-2">
             <Label htmlFor="nt-target">Server to test</Label>

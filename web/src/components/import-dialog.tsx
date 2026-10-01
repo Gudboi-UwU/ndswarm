@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { api, ApiError, errorMessage } from '@/api/client'
 import { keys } from '@/api/keys'
-import type { ImportPreview, ImportResult, Project } from '@/api/types'
+import type { ImportPreview, ImportResult, ImportSplit, Project } from '@/api/types'
 import { Disclosure } from '@/components/disclosure'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -34,18 +34,24 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
   const [target, setTarget] = useState<'new' | 'existing'>(projectId ? 'existing' : 'new')
   const [projectName, setProjectName] = useState('')
   const [existing, setExisting] = useState(projectId ? String(projectId) : '')
+  // Postman only: one test per folder (default) or one test per top-level folder, subfolders merged.
+  const [split, setSplit] = useState<ImportSplit>('folder')
   const projects = useQuery({ queryKey: keys.projects, queryFn: () => api<Project[]>('GET', '/projects'), enabled: open })
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
   const preview = useMutation({
-    mutationFn: () => api<ImportPreview>('POST', '/import/preview', { content, environment }),
+    mutationFn: (split: ImportSplit) => api<ImportPreview>('POST', '/import/preview', { content, environment, split }),
     onSuccess: (p) => setProjectName(p.project.name),
   })
   const chosenExisting = existing || (projects.data?.[0] ? String(projects.data[0].id) : '')
   const save = useMutation({
     mutationFn: () =>
-      api<ImportResult>('POST', '/import', target === 'new' ? { content, environment, newProject: projectName } : { content, environment, projectId: Number(chosenExisting) }),
+      api<ImportResult>(
+        'POST',
+        '/import',
+        target === 'new' ? { content, environment, split, newProject: projectName } : { content, environment, split, projectId: Number(chosenExisting) },
+      ),
     onSuccess: async (r) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: keys.projects }),
@@ -94,7 +100,11 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (preview.data) save.mutate()
-    else preview.mutate()
+    else preview.mutate(split)
+  }
+  const changeSplit = (v: ImportSplit) => {
+    setSplit(v)
+    preview.mutate(v)
   }
 
   const p = preview.data
@@ -195,6 +205,22 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
                 Found a <span className="font-medium">{formats[p.format]}</span> with {p.tests.length} test{p.tests.length === 1 ? '' : 's'} and {requests} request{requests === 1 ? '' : 's'}.
               </p>
 
+              {p.format === 'postman' && (
+                <div className="grid gap-2">
+                  <Label>Folders</Label>
+                  <RadioGroup value={split} onValueChange={(v) => changeSplit(v as ImportSplit)} className="gap-0 divide-y rounded-lg border">
+                    <Label htmlFor="split-folder" className="flex cursor-pointer items-center gap-3 p-3 font-normal">
+                      <RadioGroupItem id="split-folder" value="folder" />
+                      One test per folder
+                    </Label>
+                    <Label htmlFor="split-top" className="flex cursor-pointer items-center gap-3 p-3 font-normal">
+                      <RadioGroupItem id="split-top" value="top" />
+                      One test per top-level folder (subfolders merged)
+                    </Label>
+                  </RadioGroup>
+                </div>
+              )}
+
               <div className="grid gap-2">
                 <Label>Where to put it</Label>
                 <RadioGroup value={target} onValueChange={(v) => setTarget(v as 'new' | 'existing')} className="gap-0 divide-y rounded-lg border">
@@ -245,24 +271,29 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
 
               <div className="grid gap-2">
                 <Label>Tests</Label>
-                {p.tests.map((t, ti) => (
-                  <Disclosure
-                    key={`${t.name}-${ti}`}
-                    title={t.name}
-                    summary={`${t.requests.length} request${t.requests.length === 1 ? '' : 's'}${t.thresholds > 0 ? `, ${t.thresholds} pass/fail rule${t.thresholds === 1 ? '' : 's'}` : ''}`}
-                  >
-                    <ul className="grid gap-1.5">
-                      {t.requests.map((r, i) => (
-                        <li key={i} className="flex min-w-0 items-baseline gap-2 text-sm">
-                          <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{r.method}</span>
-                          <span className="min-w-0">
-                            <span className="block break-words">{r.name}</span>
-                            <span className="block font-mono text-xs break-all text-muted-foreground">{r.url}</span>
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </Disclosure>
+                {groupByFolder(p.tests).map((group, gi) => (
+                  <div key={gi} className="grid gap-2">
+                    {group.folder && <p className="mt-1 text-xs font-semibold text-muted-foreground first:mt-0">{group.folder}</p>}
+                    {group.tests.map((t, ti) => (
+                      <Disclosure
+                        key={`${t.name}-${ti}`}
+                        title={t.name}
+                        summary={`${t.requests.length} request${t.requests.length === 1 ? '' : 's'}${t.thresholds > 0 ? `, ${t.thresholds} pass/fail rule${t.thresholds === 1 ? '' : 's'}` : ''}`}
+                      >
+                        <ul className="grid gap-1.5">
+                          {t.requests.map((r, i) => (
+                            <li key={i} className="flex min-w-0 items-baseline gap-2 text-sm">
+                              <span className="w-16 shrink-0 font-mono text-xs text-muted-foreground">{r.method}</span>
+                              <span className="min-w-0">
+                                <span className="block break-words">{r.name}</span>
+                                <span className="block font-mono text-xs break-all text-muted-foreground">{r.url}</span>
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Disclosure>
+                    ))}
+                  </div>
                 ))}
               </div>
 
@@ -313,4 +344,15 @@ export function ImportDialog({ open, onOpenChange, projectId }: { open: boolean;
       </DialogContent>
     </Dialog>
   )
+}
+
+/** Groups adjacent preview tests that share a folder, so each folder gets one heading. */
+function groupByFolder(tests: ImportPreview['tests']): { folder: string; tests: ImportPreview['tests'] }[] {
+  const groups: { folder: string; tests: ImportPreview['tests'] }[] = []
+  for (const t of tests) {
+    const last = groups[groups.length - 1]
+    if (last && last.folder === t.folder) last.tests.push(t)
+    else groups.push({ folder: t.folder, tests: [t] })
+  }
+  return groups
 }
