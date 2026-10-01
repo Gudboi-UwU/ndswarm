@@ -70,3 +70,32 @@ func TestRenameFolder(t *testing.T) {
 		t.Errorf("renaming the empty folder should be a no-op, not an error: %v", err)
 	}
 }
+
+// TestMoveTest checks that moving a test to a folder changes only its folder, not its flows.
+func TestMoveTest(t *testing.T) {
+	ctx := context.Background()
+	db, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	box, _ := secret.New(make([]byte, 32))
+	s := New(db, box)
+
+	p, err := s.CreateProject(ctx, model.Project{Name: "P"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := s.CreateTest(ctx, model.Test{ProjectID: p.ID, Name: "A", Settings: model.DefaultSettings,
+		Flows: []model.Flow{{ID: "f", Name: "f", Enabled: true, Weight: 1, Steps: []model.Step{{ID: "s", Name: "s", Enabled: true, Method: "GET", URL: "/x", Body: model.Body{Type: "none"}}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := s.MoveTest(ctx, created.ID, "New folder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.Folder != "New folder" || len(moved.Flows) != 1 {
+		t.Errorf("moved: folder=%q flows=%d", moved.Folder, len(moved.Flows))
+	}
+}

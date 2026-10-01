@@ -364,6 +364,16 @@ func (s *Service) RenameFolder(ctx context.Context, projectID int64, from, to st
 	return nil
 }
 
+// MoveTest sets a test's folder, leaving everything else about it unchanged.
+func (s *Service) MoveTest(ctx context.Context, id int64, folder string) (model.Test, error) {
+	t, err := s.GetTest(ctx, id)
+	if err != nil {
+		return t, err
+	}
+	t.Folder = folder
+	return s.saveTest(ctx, t)
+}
+
 func (s *Service) DuplicateTest(ctx context.Context, id int64) (model.Test, error) {
 	t, err := s.GetTest(ctx, id)
 	if err != nil {
