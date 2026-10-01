@@ -6,6 +6,7 @@ import { meKey, useMe } from '@/api/auth'
 import { api, ApiError, errorMessage } from '@/api/client'
 import type { GuestMode, Role, Settings, SystemInfo, User } from '@/api/types'
 import { FormField } from '@/components/form-field'
+import { NumberInput } from '@/components/number-input'
 import { ConfirmDelete, useTitle } from '@/components/page'
 import { Button } from '@/components/ui/button'
 import {
@@ -421,13 +422,13 @@ function TargetsSection() {
 function TargetsForm({ initial, onSaved }: { initial: Settings; onSaved: (s: Settings) => void }) {
   const [allowlist, setAllowlist] = useState(initial.targetAllowlist.join('\n'))
   const [linkLocal, setLinkLocal] = useState(initial.allowLinkLocal)
-  const [retention, setRetention] = useState(String(initial.retentionDays))
+  const [retention, setRetention] = useState(initial.retentionDays)
   const save = useMutation({
     mutationFn: () =>
       api<Settings>('PATCH', '/settings', {
         targetAllowlist: allowlist.split(/[\s,]+/).filter(Boolean),
         allowLinkLocal: linkLocal,
-        retentionDays: Number(retention),
+        retentionDays: retention,
       }),
     onSuccess: (s) => {
       onSaved(s)
@@ -457,17 +458,22 @@ function TargetsForm({ initial, onSaved }: { initial: Settings; onSaved: (s: Set
           <span className="text-sm text-muted-foreground">Off by default, so tests cannot reach cloud metadata such as 169.254.169.254.</span>
         </span>
       </label>
-      <FormField
-        id="retention"
-        label="Keep logged requests for (days)"
-        type="number"
-        min={1}
-        className="w-32 font-mono"
-        value={retention}
-        onChange={(e) => setRetention(e.target.value)}
-        error={err?.field('retentionDays')}
-        hint="Older request logs are deleted daily. Run metrics and summaries are kept until the run is deleted."
-      />
+      <div className="grid gap-2">
+        <Label htmlFor="retention">Keep logged requests for (days)</Label>
+        <NumberInput
+          id="retention"
+          min={1}
+          max={3650}
+          className="w-32"
+          invalid={!!err?.field('retentionDays')}
+          value={retention}
+          onCommit={setRetention}
+          onBlur={() => setRetention((n) => Math.min(3650, Math.max(1, Math.round(n) || 1)))}
+        />
+        <p className={err?.field('retentionDays') ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>
+          {err?.field('retentionDays') ?? 'Older request logs are deleted daily. Run metrics and summaries are kept until the run is deleted.'}
+        </p>
+      </div>
       <div>
         <Button type="submit" disabled={save.isPending}>
           Save

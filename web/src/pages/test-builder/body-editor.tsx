@@ -1,5 +1,6 @@
 import { CopyIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import type { BodyType, Step, Variant } from '@/api/types'
+import { NumberInput } from '@/components/number-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -142,7 +143,14 @@ export function BodyEditor({ body, onChange, path, selected, onSelect }: { body:
                 {body.variantPick === 'weighted' && (
                   <label className="flex items-center gap-2 text-sm text-muted-foreground">
                     weight
-                    <Input type="number" min={0} className="w-20 font-mono" value={v.weight} onChange={(e) => setVariant({ weight: Number(e.target.value) })} />
+                    <NumberInput
+                      aria-label="Variation weight"
+                      min={0}
+                      className="w-20"
+                      value={v.weight}
+                      onCommit={(weight) => setVariant({ weight })}
+                      onBlur={() => setVariant({ weight: Math.max(0, Math.round(v.weight) || 0) })}
+                    />
                   </label>
                 )}
                 <label className="flex items-center gap-2 text-sm">

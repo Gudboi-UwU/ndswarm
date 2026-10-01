@@ -1,6 +1,7 @@
 import { PlusIcon, XIcon } from 'lucide-react'
 import { useState } from 'react'
 import type { HttpSettings, Load, Stage, Threshold, ThresholdMetric, ThresholdOp } from '@/api/types'
+import { NumberInput } from '@/components/number-input'
 import { TimeChart, type ChartSeries } from '@/components/time-chart'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -127,13 +128,13 @@ function SimpleLoad({ load, shape, onChange }: { load: Load; shape: { users: num
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="grid gap-2">
           <Label htmlFor="load-users">Simulated users</Label>
-          <LoadNumberInput id="load-users" min={1} value={shape.users} invalid={!!err} onCommit={(n) => setRaw({ users: n })} onBlur={clamp} />
+          <NumberInput id="load-users" min={1} value={shape.users} invalid={!!err} onCommit={(n) => setRaw({ users: n })} onBlur={clamp} />
           <p className="text-xs text-muted-foreground">Sending requests at the same time.</p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="load-total">Test length</Label>
           <div className="flex gap-2">
-            <LoadNumberInput
+            <NumberInput
               id="load-total"
               min={1}
               value={+(shape.total / factor).toFixed(2)}
@@ -154,7 +155,7 @@ function SimpleLoad({ load, shape, onChange }: { load: Load; shape: { users: num
         </div>
         <div className="grid gap-2">
           <Label htmlFor="load-ramp">Ramp-up (seconds)</Label>
-          <LoadNumberInput id="load-ramp" min={1} value={shape.ramp} onCommit={(n) => setRaw({ ramp: n })} onBlur={clamp} />
+          <NumberInput id="load-ramp" min={1} value={shape.ramp} onCommit={(n) => setRaw({ ramp: n })} onBlur={clamp} />
           <p className="text-xs text-muted-foreground">Users are added gradually, not all at once.</p>
         </div>
       </div>
@@ -175,32 +176,6 @@ function SimpleLoad({ load, shape, onChange }: { load: Load; shape: { users: num
  * enforce bounds (and this always snaps the shown text back to the committed value first, so
  * an invalid or empty field never stays that way after leaving it).
  */
-function LoadNumberInput({ id, ariaLabel, className, value, min, invalid, onCommit, onBlur }: { id?: string; ariaLabel?: string; className?: string; value: number; min?: number; invalid?: boolean; onCommit: (v: number) => void; onBlur: () => void }) {
-  const [state, setState] = useState(() => ({ value, text: String(value) }))
-  if (state.value !== value) setState({ value, text: String(value) })
-  return (
-    <Input
-      id={id}
-      aria-label={ariaLabel}
-      type="number"
-      min={min}
-      className={cn('font-mono', className)}
-      value={state.text}
-      aria-invalid={invalid ? true : undefined}
-      onChange={(e) => {
-        const text = e.target.value
-        setState((s) => ({ ...s, text }))
-        const n = Number(text)
-        if (text.trim() !== '' && Number.isFinite(n)) onCommit(n)
-      }}
-      onBlur={() => {
-        setState({ value, text: String(value) })
-        onBlur()
-      }}
-    />
-  )
-}
-
 function duration(sec: number): string {
   if (sec < 60) return `${sec} second${sec === 1 ? '' : 's'}`
   const m = Math.floor(sec / 60)
@@ -402,7 +377,7 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
             {preset.name !== 'Smoke' && (
               <div className="grid gap-2">
                 <Label htmlFor="peak">Peak users</Label>
-                <LoadNumberInput id="peak" className="w-28" min={1} value={peak} onCommit={setPeak} onBlur={() => setPeak((n) => Math.max(1, Math.round(n) || 1))} />
+                <NumberInput id="peak" className="w-28" min={1} value={peak} onCommit={setPeak} onBlur={() => setPeak((n) => Math.max(1, Math.round(n) || 1))} />
               </div>
             )}
             <Button type="button" variant="outline" onClick={() => setStages(preset.stages(Math.max(1, Math.round(peak) || 1)))}>
@@ -434,16 +409,16 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
             return (
               <div key={ids[i] ?? i} className="contents">
                 <span className="font-mono text-muted-foreground">{i + 1}</span>
-                <LoadNumberInput
-                  ariaLabel={`Stage ${i + 1} length in seconds`}
+                <NumberInput
+                  aria-label={`Stage ${i + 1} length in seconds`}
                   min={1}
                   value={s.durationSec}
                   invalid={!!errors.get(`load.stages.${i}.durationSec`)}
                   onCommit={(n) => update(i, { durationSec: n })}
                   onBlur={() => update(i, { durationSec: Math.max(1, Math.round(s.durationSec) || 1) })}
                 />
-                <LoadNumberInput
-                  ariaLabel={`Stage ${i + 1} users at the end`}
+                <NumberInput
+                  aria-label={`Stage ${i + 1} users at the end`}
                   min={0}
                   value={s.target}
                   invalid={!!errors.get(`load.stages.${i}.target`)}
@@ -470,7 +445,7 @@ function CustomLoad({ load, onChange }: { load: Load; onChange: (l: Load) => voi
 
       <section className="grid max-w-md gap-2">
         <Label htmlFor="graceful">Wind-down time (seconds)</Label>
-        <LoadNumberInput
+        <NumberInput
           id="graceful"
           className="w-32"
           min={0}
@@ -506,16 +481,16 @@ export function SettingsEditor({ settings, onChange }: { settings: HttpSettings;
       {toggle('captureBodies', 'Keep bodies in logs', 'Store request and response bodies of logged requests (cut at 16 KB and 64 KB).')}
       <div className="grid gap-2">
         <Label htmlFor="sample">Log successful requests (%)</Label>
-        <Input
+        <NumberInput
           id="sample"
-          type="number"
           min={0}
           max={100}
           step={0.1}
-          className="w-32 font-mono"
+          className="w-32"
           value={settings.logSamplePct}
-          aria-invalid={errors.get('settings.logSamplePct') ? true : undefined}
-          onChange={(e) => onChange({ ...settings, logSamplePct: Number(e.target.value) })}
+          invalid={!!errors.get('settings.logSamplePct')}
+          onCommit={(logSamplePct) => onChange({ ...settings, logSamplePct })}
+          onBlur={() => onChange({ ...settings, logSamplePct: Math.min(100, Math.max(0, settings.logSamplePct || 0)) })}
         />
         <p className="text-sm text-muted-foreground">
           {errors.get('settings.logSamplePct') ?? 'Errors are always logged. Per request and second at most 50 errors, 20 successes and the slowest request are kept.'}

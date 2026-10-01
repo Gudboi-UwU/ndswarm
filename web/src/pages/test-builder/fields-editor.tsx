@@ -1,5 +1,6 @@
 import { CornerDownRightIcon, PlusIcon, XIcon } from 'lucide-react'
 import type { Field, FieldType } from '@/api/types'
+import { NumberInput } from '@/components/number-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -135,22 +136,24 @@ function FieldRow({
             <p className="mt-2 text-sm text-muted-foreground">{f.children.length} field{f.children.length === 1 ? '' : 's'} inside, below</p>
           ) : f.type === 'array' ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Input
+              <NumberInput
                 aria-label={`Minimum items of ${f.key}`}
-                type="number"
                 min={0}
-                className="w-20 font-mono"
+                max={1000}
+                className="w-20"
                 value={f.arrayLen?.min ?? 0}
-                onChange={(e) => onChange({ ...f, arrayLen: { min: Number(e.target.value), max: f.arrayLen?.max ?? 0 } })}
+                onCommit={(min) => onChange({ ...f, arrayLen: { min, max: f.arrayLen?.max ?? 0 } })}
+                onBlur={() => onChange({ ...f, arrayLen: { min: Math.min(1000, Math.max(0, Math.round(f.arrayLen?.min ?? 0))), max: f.arrayLen?.max ?? 0 } })}
               />
               to
-              <Input
+              <NumberInput
                 aria-label={`Maximum items of ${f.key}`}
-                type="number"
                 min={0}
-                className="w-20 font-mono"
+                max={1000}
+                className="w-20"
                 value={f.arrayLen?.max ?? 0}
-                onChange={(e) => onChange({ ...f, arrayLen: { min: f.arrayLen?.min ?? 0, max: Number(e.target.value) } })}
+                onCommit={(max) => onChange({ ...f, arrayLen: { min: f.arrayLen?.min ?? 0, max } })}
+                onBlur={() => onChange({ ...f, arrayLen: { min: f.arrayLen?.min ?? 0, max: Math.min(1000, Math.max(0, Math.round(f.arrayLen?.max ?? 0))) } })}
               />
               items
             </div>

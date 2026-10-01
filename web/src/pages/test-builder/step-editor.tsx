@@ -3,6 +3,7 @@ import { useState } from 'react'
 import type { ApiError } from '@/api/client'
 import type { Flow, Method, Step } from '@/api/types'
 import { Disclosure } from '@/components/disclosure'
+import { NumberInput } from '@/components/number-input'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -103,7 +104,14 @@ export function EndpointEditor({
             </Tooltip>
           </Label>
           <div className="flex items-center gap-2">
-            <Input id="ep-weight" type="number" min={0} className="w-20 font-mono" value={flow.weight} onChange={(e) => onChange({ ...flow, weight: Math.max(0, Number(e.target.value)) })} />
+            <NumberInput
+              id="ep-weight"
+              min={0}
+              className="w-20"
+              value={flow.weight}
+              onCommit={(weight) => onChange({ ...flow, weight })}
+              onBlur={() => onChange({ ...flow, weight: Math.max(0, Math.round(flow.weight) || 0) })}
+            />
             <span className="w-36 text-sm whitespace-nowrap text-muted-foreground tabular-nums">{share === null ? 'not sent' : `${share.toFixed(0)}% of requests`}</span>
           </div>
         </div>
@@ -130,14 +138,15 @@ export function EndpointEditor({
           <div className="flex flex-wrap items-end gap-6">
             <div className="grid gap-2">
               <Label htmlFor="ep-timeout">Give up after (ms)</Label>
-              <Input
+              <NumberInput
                 id="ep-timeout"
-                type="number"
                 min={1}
-                className="w-32 font-mono"
+                max={300_000}
+                className="w-32"
                 value={step.timeoutMs}
-                aria-invalid={errors.get(`${path}.timeoutMs`) ? true : undefined}
-                onChange={(e) => setStep({ timeoutMs: Number(e.target.value) })}
+                invalid={!!errors.get(`${path}.timeoutMs`)}
+                onCommit={(timeoutMs) => setStep({ timeoutMs })}
+                onBlur={() => setStep({ timeoutMs: Math.min(300_000, Math.max(1, Math.round(step.timeoutMs) || 1)) })}
               />
             </div>
             <label className="flex items-center gap-2 pb-1.5 text-sm">
